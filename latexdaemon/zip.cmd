@@ -1,0 +1,1 @@
+7za -tzip a latexdaemon.zip *.cpp *.h *.vcproj *.sln *.cmd Release\latexdaemon.exe
