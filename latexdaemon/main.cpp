@@ -1,6 +1,6 @@
-// By william blum (william . blum @ comlab.ox.ac.uk)
+// By william blum (http://web.comlab.ox.ac.uk/oucl/people/william.blum.html)
 // September 2006
-// Version 0.2
+#define VERSION			0.2
 
 // The Crc32Dynamic class was developped by Brian Friesen and can be downloaded from
 // http://www.codeproject.com/cpp/crc32.asp
@@ -43,9 +43,9 @@ using namespace std;
 
 int _tmain(int argc, TCHAR *argv[])
 {
+	cout << "LatexDaemon " << VERSION << " by William Blum, September 2006" << endl << endl;;
     if(argc <= 1)
 	{
-		cout << "LatexDaemon 1.0 by William Blum, September 2006" << endl << endl;;
 		cout << "Instructions:" << endl;;
 		cout << "  1 Move the preamble from your .tex file to a new file named preamble.tex." << endl << endl;;
 		cout << "  2 Insert the following line at the beginning of your .tex file:" << endl;;
@@ -229,7 +229,6 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
 	FILE_NOTIFY_INFORMATION *pFileNotify;
 	DWORD BytesReturned;
-	WCHAR w_filename[_MAX_FNAME];
 	char filename[_MAX_FNAME];
     cout << "- Watching directory " << texpath << " for changes...\n";
 	SetConsoleTitle("Latex daemon");
@@ -249,17 +248,15 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
 		do { 
 			// Convert the filename from unicode string to oem string
-			int length = pFileNotify->FileNameLength/2;
-			wcsncpy(w_filename, pFileNotify->FileName, length);
-			w_filename[length] = 0;
-			wcstombs( filename, w_filename, _MAX_FNAME );
+			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
+			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
 
 			// modification of the tex file?
 			if( !_tcscmp(filename,texfilename.c_str()) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
-				// has the CRC changed?
 				DWORD newcrc;
-				crc.FileCrc32Assembly(texfilename.c_str(), newcrc);
-				if( crc_tex != newcrc ) {				 
+				// has the CRC changed?
+				if( (NO_ERROR == crc.FileCrc32Assembly(texfilename.c_str(), newcrc)) &&
+					(crc_tex != newcrc) ) {
 					crc_tex = newcrc;
 					SetConsoleTitle("recompiling... - Latex daemon");
 					cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
@@ -272,9 +269,8 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			
 			// modification of the preamble file?
 			else if( !_tcscmp(filename,PREAMBLE_FILENAME) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
-				DWORD newcrc;
-				crc.FileCrc32Assembly(PREAMBLE_FILENAME, newcrc);
-				if( crc_preamble != newcrc ) {
+				if( (NO_ERROR == crc.FileCrc32Assembly(PREAMBLE_FILENAME, newcrc)) &&
+					(crc_preamble != newcrc) ) {
 					crc_preamble = newcrc;
 					SetConsoleTitle("recompiling... - Latex daemon");
 					cout << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
