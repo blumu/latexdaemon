@@ -251,9 +251,9 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
 
+			DWORD newcrc;
 			// modification of the tex file?
 			if( !_tcscmp(filename,texfilename.c_str()) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
-				DWORD newcrc;
 				// has the CRC changed?
 				if( (NO_ERROR == crc.FileCrc32Assembly(texfilename.c_str(), newcrc)) &&
 					(crc_tex != newcrc) ) {
