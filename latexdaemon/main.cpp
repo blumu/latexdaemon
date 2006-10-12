@@ -245,6 +245,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			 NULL, /* overlapped buffer */
 			 NULL)) /* completion routine */
 	{
+		cout << "\r";
 		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
 		do { 
 			// Convert the filename from unicode string to oem string
@@ -253,6 +254,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 
 			DWORD newcrc;
 			// modification of the tex file?
+			DWORD newcrc;
 			if( !_tcscmp(filename,texfilename.c_str()) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
 				// has the CRC changed?
 				if( (NO_ERROR == crc.FileCrc32Assembly(texfilename.c_str(), newcrc)) &&
@@ -291,7 +293,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 		}
 		while( pFileNotify->NextEntryOffset );
 
-		cout << "- waiting for changes...\n";
+		cout << "- waiting for changes...";
 	}
 	/* DWORD Buffer.NextEntryOffset; */
     CloseHandle(hDir);
