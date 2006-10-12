@@ -254,7 +254,6 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 
 			DWORD newcrc;
 			// modification of the tex file?
-			DWORD newcrc;
 			if( !_tcscmp(filename,texfilename.c_str()) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
 				// has the CRC changed?
 				if( (NO_ERROR == crc.FileCrc32Assembly(texfilename.c_str(), newcrc)) &&
