@@ -37,6 +37,7 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 #define SRC_FRESHER	   1
 #define OUT_FRESHER	   0
 
+bool preamble_present = true;
 
 using namespace std;
 
@@ -76,24 +77,26 @@ int _tmain(int argc, TCHAR *argv[])
 
 	int res = compare_timestamp(PREAMBLE_FILENAME, (string(PREAMBLE_BASENAME)+".fmt").c_str());
 	if ( res == ERR_SRCABSENT ) {
-	  cout << "File " << PREAMBLE_FILENAME << " not found!\n";
-	  return 2;
+		cout << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
+		preamble_present = false;
 	}
 	else if( res == SRC_FRESHER || res == ERR_OUTABSENT ) {
-	   if( res == SRC_FRESHER ) {
-		 cout << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
-		 cout << "  Let's recreate the format file and recompile " << file << ".tex.\n";
-	   }
-	   else {		
-		 cout << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
-	   }
-	   precompile(file);
-	   cout << "...................................\n";
-	   compile(file);
-	   cout << "-----------------------------------\n";
+		preamble_present = true;
+		if( res == SRC_FRESHER ) {
+			 cout << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
+			 cout << "  Let's recreate the format file and recompile " << file << ".tex.\n";
+		}
+		else {		
+			cout << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
+		}
+		precompile(file);
+		cout << "...................................\n";
+		compile(file);
+		cout << "-----------------------------------\n";
 	}
 	else // OUT_FRESHER: no need to update the format file
 	{
+	    preamble_present = true;
 		int res = compare_timestamp((string(file)+".tex").c_str(), (string(file)+".dvi").c_str());
 		if ( res == ERR_SRCABSENT ) {
 			cout << "File " << file << ".tex not found!\n";
@@ -210,7 +213,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 		return;
 	}
 
-	if( NO_ERROR != crc.FileCrc32Assembly(PREAMBLE_FILENAME, crc_preamble) ) {
+	if( preamble_present && NO_ERROR != crc.FileCrc32Assembly(PREAMBLE_FILENAME, crc_preamble) ) {
 		cerr << "File " << PREAMBLE_FILENAME << " cannot be found or opened!\n";
 		return;
 	}
@@ -261,7 +264,10 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 					crc_tex = newcrc;
 					SetConsoleTitle("recompiling... - Latex daemon");
 					cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
-					compile(texbasename);
+					if(  preamble_present )
+						compile(texbasename);
+					else
+						fullcompile(texbasename);
 					cout << "-----------------------------------\n";
 				}
 				else
@@ -269,7 +275,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			}
 			
 			// modification of the preamble file?
-			else if( !_tcscmp(filename,PREAMBLE_FILENAME) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
+			else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
 				if( (NO_ERROR == crc.FileCrc32Assembly(PREAMBLE_FILENAME, newcrc)) &&
 					(crc_preamble != newcrc) ) {
 					crc_preamble = newcrc;
