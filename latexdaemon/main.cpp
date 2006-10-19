@@ -1,6 +1,6 @@
 // By william blum (http://web.comlab.ox.ac.uk/oucl/people/william.blum.html)
 // September 2006
-#define VERSION			0.2
+#define VERSION			0.3
 
 // The Crc32Dynamic class was developped by Brian Friesen and can be downloaded from
 // http://www.codeproject.com/cpp/crc32.asp
@@ -32,10 +32,10 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 #define MAXCMDLINE				1024
 
 
-#define ERR_SRCABSENT -1
-#define ERR_OUTABSENT -2
-#define SRC_FRESHER	   1
-#define OUT_FRESHER	   0
+#define OUT_FRESHER	   0x00
+#define SRC_FRESHER	   0x01
+#define ERR_OUTABSENT  0x02
+#define ERR_SRCABSENT  0x04
 
 bool preamble_present = true;
 
@@ -75,13 +75,17 @@ int _tmain(int argc, TCHAR *argv[])
 	string path = string(drive) +  dir;
 	_chdir(path.c_str());
 
+	// compare the timestamp of the preamble.tex file and the format file
 	int res = compare_timestamp(PREAMBLE_FILENAME, (string(PREAMBLE_BASENAME)+".fmt").c_str());
-	if ( res == ERR_SRCABSENT ) {
+	
+	preamble_present = !(res & ERR_SRCABSENT);
+	if ( !preamble_present ) {
 		cout << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
-		preamble_present = false;
 	}
-	else if( res == SRC_FRESHER || res == ERR_OUTABSENT ) {
-		preamble_present = true;
+
+	// The preamble file is present and the format file does not exist or has a timestamp
+	// older than the preamble file : then recreate the format file and recompile the .tex file.
+	if( preamble_present &&  (res == SRC_FRESHER || (res & ERR_OUTABSENT)) ) {
 		if( res == SRC_FRESHER ) {
 			 cout << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
 			 cout << "  Let's recreate the format file and recompile " << file << ".tex.\n";
@@ -94,22 +98,25 @@ int _tmain(int argc, TCHAR *argv[])
 		compile(file);
 		cout << "-----------------------------------\n";
 	}
-	else // OUT_FRESHER: no need to update the format file
-	{
-	    preamble_present = true;
+	
+	// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
+	else {
 		int res = compare_timestamp((string(file)+".tex").c_str(), (string(file)+".dvi").c_str());
-		if ( res == ERR_SRCABSENT ) {
+		if ( res & ERR_SRCABSENT ) {
 			cout << "File " << file << ".tex not found!\n";
 			return 2;
 		}
-		else if( res == SRC_FRESHER || res == ERR_OUTABSENT ) {
-			if( res == SRC_FRESHER )
-				cout << "+ " << file << ".tex has been modified since last run. Let's recompile it...\n";
-			else
-				cout << "+ " << file << ".dvi does not exists. Let's create it...\n";
+		else if ( res & ERR_OUTABSENT ) {
+			cout << "+ " << file << ".dvi does not exists. Let's create it...\n";
 			compile(file);
 			cout << "-----------------------------------\n";
 		}
+		else if( res == SRC_FRESHER ) {
+			cout << "+ " << file << ".tex has been modified since last run. Let's recompile it...\n";
+			compile(file);
+			cout << "-----------------------------------\n";
+		}
+		// else res == OUT_FRESHER : no need to recompile.
 	}
 
 	// watch for changes
@@ -122,17 +129,14 @@ int _tmain(int argc, TCHAR *argv[])
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 {
 	struct stat attr_src, attr_out;			// file attribute structures
-	int res;
+	int res_src, res_out;
 
-	res = stat(sourcefile, &attr_src);
-	if( res ) // problem when getting the attributes of the source file?
-	  return ERR_SRCABSENT;
-
-	res = stat(outputfile, &attr_out);
-	if( res ) // problem when getting the attributes of the output file?
-	  return ERR_OUTABSENT;
-
-	return ( difftime(attr_out.st_mtime, attr_src.st_mtime) > 0 ) ? OUT_FRESHER : SRC_FRESHER;
+	res_src = stat(sourcefile, &attr_src);
+	res_out = stat(outputfile, &attr_out);
+	if( res_src || res_out ) // problem when getting the attributes of the files?
+		return  (res_src ? ERR_SRCABSENT : 0) | (res_out ? ERR_OUTABSENT : 0);
+	else
+		return ( difftime(attr_out.st_mtime, attr_src.st_mtime) > 0 ) ? OUT_FRESHER : SRC_FRESHER;
 }
 
 
@@ -184,18 +188,20 @@ void precompile(LPCTSTR texbasename)
 // Compile the final tex file using the precompiled preamble
 void compile(LPCTSTR texbasename)
 {
-	string cmdline = string("pdftex -interaction=nonstopmode -src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+" \"";
-	cout << " Running '" << cmdline << "'\n";
-	launch(cmdline.c_str());
+	// preamble present? Then compile using the precompiled preamble.
+	if(  preamble_present ) {
+		string cmdline = string("pdftex -interaction=nonstopmode -src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+" \"";
+		cout << " Running '" << cmdline << "'\n";
+		launch(cmdline.c_str());
+	}
+	// no preamble: compile the latex file without the standard latex format file.
+	else {
+		string cmdline = string("latex -interaction=nonstopmode -src-specials ")+texbasename+".tex";
+		cout << " Running '" << cmdline << "'\n";
+		launch(cmdline.c_str());
+	}
 }
 
-// Compile the latex file without using the precompiled preamble
-void fullcompile(LPCTSTR texbasename)
-{
-	string cmdline = string("latex -interaction=nonstopmode -src-specials ")+texbasename+".tex";
-	cout << " Running '" << cmdline << "'\n";
-	launch(cmdline.c_str());
-}
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 {
@@ -264,14 +270,11 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 					crc_tex = newcrc;
 					SetConsoleTitle("recompiling... - Latex daemon");
 					cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
-					if(  preamble_present )
-						compile(texbasename);
-					else
-						fullcompile(texbasename);
+					compile(texbasename);
 					cout << "-----------------------------------\n";
 				}
 				else
-					cout << ".\"" << filename << "\" has been touched (CRC preserved)\n" ;
+					cout << ".\"" << filename << "\" touched (CRC preserved)\n" ;
 			}
 			
 			// modification of the preamble file?
@@ -288,7 +291,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 					cout << "-----------------------------------\n";
 				}
 				else
-					cout << ".\"" << filename << "\" has been touched (CRC preserved)\n" ;
+					cout << ".\"" << filename << "\" touched (CRC preserved)\n" ;
 			}
 			else
 				cout << ".\"" << filename << "\" touched or modified\n" ;
