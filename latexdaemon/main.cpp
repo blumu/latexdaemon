@@ -179,7 +179,7 @@ void launch(LPCTSTR cmdline)
 // Precompile the preamble into the format file "texfile.fmt"
 void precompile(LPCTSTR texbasename)
 {
-	string cmdline = string("pdftex -interaction=nonstopmode -src-specials -ini \"&latex\"  \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
+	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&latex\"  \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
 	cout << " Running '" << cmdline << "'\n";
 	launch(cmdline.c_str());	
 }
@@ -190,7 +190,7 @@ void compile(LPCTSTR texbasename)
 {
 	// preamble present? Then compile using the precompiled preamble.
 	if(  preamble_present ) {
-		string cmdline = string("pdftex -interaction=nonstopmode -src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+" \"";
+		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
 		cout << " Running '" << cmdline << "'\n";
 		launch(cmdline.c_str());
 	}
