@@ -1,9 +1,10 @@
-<?xml version="1.0" encoding="Windows-1252"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="8.00"
 	Name="latexdaemon"
 	ProjectGUID="{79A94EC0-F265-4223-A6E5-8387057945BA}"
+	RootNamespace="latexdaemon"
 	Keyword="Win32Proj"
 	>
 	<Platforms>
@@ -171,7 +172,7 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
-				RelativePath=".\Crc32Dynamic.h"
+				RelativePath=".\md5.h"
 				>
 			</File>
 		</Filter>
@@ -187,11 +188,11 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
-				RelativePath=".\Crc32Dynamic.cpp"
+				RelativePath=".\main.cpp"
 				>
 			</File>
 			<File
-				RelativePath=".\main.cpp"
+				RelativePath=".\md5.cpp"
 				>
 			</File>
 		</Filter>

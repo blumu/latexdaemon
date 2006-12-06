@@ -1,9 +1,14 @@
 // By william blum (http://web.comlab.ox.ac.uk/oucl/people/william.blum.html)
-// September 2006
-#define VERSION			0.3
+// december 2006
+#define VERSION			0.4
 
-// The Crc32Dynamic class was developped by Brian Friesen and can be downloaded from
-// http://www.codeproject.com/cpp/crc32.asp
+// List of changes:
+// 0.4: change from crc to md5
+// 0.1: first version, September 2006
+
+// Acknowledgment:
+// - The MD5 class is a modification of CodeGuru's one: http://www.codeguru.com/Cpp/Cpp/algorithms/article.php/c5087
+// - Command line processing routine from The Code Project: http://www.codeproject.com/useritems/SimpleOpt.asp
 
 #define _WIN32_WINNT  0x0400
 #define _CRT_SECURE_NO_DEPRECATE
@@ -17,7 +22,7 @@
 #include <direct.h>
 #include <sys/stat.h>
 #include <time.h>
-#include "Crc32Dynamic.h"
+#include "md5.h"
 
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename);
@@ -44,7 +49,7 @@ using namespace std;
 
 int _tmain(int argc, TCHAR *argv[])
 {
-	cout << "LatexDaemon " << VERSION << " by William Blum, September 2006" << endl << endl;;
+	cout << "LatexDaemon " << VERSION << " by William Blum, December 2006" << endl << endl;;
     if(argc <= 1)
 	{
 		cout << "Instructions:" << endl;;
@@ -208,18 +213,16 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 	string texfilename = string(texbasename) + ".tex";
 
 
-	// CRC of the tex file and the preamble file
-	DWORD crc_tex, crc_preamble;
+	// digest of the tex file and the preamble file
+	md5 dg_tex, dg_preamble;
 	
-	// Compute the CRC of the tex file and the preamble file
-	CCrc32Dynamic crc;
-	crc.Init();
-	if( NO_ERROR != crc.FileCrc32Assembly(texfilename.c_str(), crc_tex) ) {
+	// Compute the digest of the tex file and the preamble file
+	if( !dg_tex.DigestFile(texfilename.c_str()) ) {
 		cerr << "File " << texfilename << " cannot be found or opened!\n";
 		return;
 	}
 
-	if( preamble_present && NO_ERROR != crc.FileCrc32Assembly(PREAMBLE_FILENAME, crc_preamble) ) {
+	if( preamble_present && !dg_preamble.DigestFile(PREAMBLE_FILENAME) ) {
 		cerr << "File " << PREAMBLE_FILENAME << " cannot be found or opened!\n";
 		return;
 	}
@@ -239,7 +242,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 	FILE_NOTIFY_INFORMATION *pFileNotify;
 	DWORD BytesReturned;
 	char filename[_MAX_FNAME];
-    cout << "- Watching directory " << texpath << " for changes...\n";
+    cout << "-- Watching directory " << texpath << " for changes...\n";
 	SetConsoleTitle("Latex daemon");
 	while( ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
@@ -260,48 +263,54 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			// Convert the filename from unicode string to oem string
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
-
-			DWORD newcrc;
-			// modification of the tex file?
-			if( !_tcscmp(filename,texfilename.c_str()) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
-				// has the CRC changed?
-				if( (NO_ERROR == crc.FileCrc32Assembly(texfilename.c_str(), newcrc)) &&
-					(crc_tex != newcrc) ) {
-					crc_tex = newcrc;
-					SetConsoleTitle("recompiling... - Latex daemon");
-					cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
-					compile(texbasename);
-					cout << "-----------------------------------\n";
+ 
+			if( pFileNotify->Action == FILE_ACTION_MODIFIED )
+			{
+				md5 dg_new;
+				// modification of the tex file?
+				if( !_tcscmp(filename,texfilename.c_str())  ) {
+					// has the digest changed?
+					if( dg_new.DigestFile(texfilename.c_str()) &&
+						(dg_tex != dg_new) ) {
+						dg_tex = dg_new;
+						SetConsoleTitle("recompiling... - Latex daemon");
+						cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
+						compile(texbasename);
+						cout << "-----------------------------------\n";
+					}
+					else
+						cout << "-\"" << filename << "\" modified but digest preserved\n" ;
 				}
-				else
-					cout << ".\"" << filename << "\" touched (CRC preserved)\n" ;
-			}
-			
-			// modification of the preamble file?
-			else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME) && ( pFileNotify->Action == FILE_ACTION_MODIFIED) ) {
-				if( (NO_ERROR == crc.FileCrc32Assembly(PREAMBLE_FILENAME, newcrc)) &&
-					(crc_preamble != newcrc) ) {
-					crc_preamble = newcrc;
-					SetConsoleTitle("recompiling... - Latex daemon");
-					cout << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
-					cout << "  Let us recreate the format file and recompile " << texbasename << ".tex.\n";
-					precompile(texbasename);
-					cout << "...................................\n";
-					compile(texbasename);
-					cout << "-----------------------------------\n";
+				
+				// modification of the preamble file?
+				else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME)  ) {
+					if( (dg_new.DigestFile(PREAMBLE_FILENAME)) &&
+						(dg_preamble != dg_new) ) {
+						dg_preamble = dg_new;
+						SetConsoleTitle("recompiling... - Latex daemon");
+						cout << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
+						cout << "  Let us recreate the format file and recompile " << texbasename << ".tex.\n";
+						precompile(texbasename);
+						cout << "...................................\n";
+						compile(texbasename);
+						cout << "-----------------------------------\n";
+					}
+					else
+						cout << "-\"" << filename << "\" modified but digest preserved\n" ;
 				}
-				else
-					cout << ".\"" << filename << "\" touched (CRC preserved)\n" ;
+				else {
+					cout << ".\"" << filename << "\" modified\n" ;
+				}
 			}
-			else
-				cout << ".\"" << filename << "\" touched or modified\n" ;
-
+			else {
+				cout << ".\"" << filename << "\" touched\n" ;
+			}
 			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
 			SetConsoleTitle("Latex daemon");
 		}
 		while( pFileNotify->NextEntryOffset );
 
-		cout << "- waiting for changes...";
+		cout << "-- waiting for changes...";
 	}
 	/* DWORD Buffer.NextEntryOffset; */
     CloseHandle(hDir);
