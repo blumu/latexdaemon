@@ -115,7 +115,7 @@ char* MD5File(char* szFilename)
 {
 	FILE* file;
 	md5 alg;
-	size_t nLen;
+	uint4 nLen;
 	unsigned char chBuffer[1024];
 
 	try
@@ -124,7 +124,7 @@ char* MD5File(char* szFilename)
 
 		if ((file = fopen (szFilename, "rb")) != NULL)
 		{
-			while (nLen = fread (chBuffer, 1, 1024, file))
+			while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
 				alg.Update(chBuffer, nLen);
 
 			alg.Finalize();
@@ -147,7 +147,7 @@ char* MD5File(char* szFilename)
 bool md5::DigestFile(const char* szFilename)
 {
 	FILE* file;
-	size_t nLen;
+	uint4 nLen;
 	unsigned char chBuffer[1024];
 
 	try
@@ -156,7 +156,7 @@ bool md5::DigestFile(const char* szFilename)
 
 		if ((file = fopen (szFilename, "rb")) != NULL)
 		{
-			while (nLen = fread (chBuffer, 1, 1024, file))
+			while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
 				Update(chBuffer, nLen);
 
 			Finalize();
