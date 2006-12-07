@@ -60,6 +60,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				LinkIncremental="2"
+				GenerateManifest="true"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="1"
@@ -69,6 +70,7 @@
 			/>
 			<Tool
 				Name="VCManifestTool"
+				UseFAT32Workaround="true"
 			/>
 			<Tool
 				Name="VCXDCMakeTool"

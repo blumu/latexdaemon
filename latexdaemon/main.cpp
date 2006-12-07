@@ -1,8 +1,10 @@
 // By william blum (http://web.comlab.ox.ac.uk/oucl/people/william.blum.html)
 // december 2006
-#define VERSION			0.4
+#define VERSION			0.5
 
 // List of changes:
+// 0.5
+//  . indicates if there are errors during Latex compilation in the title of the console
 // 0.4
 //  . Change: compute the MD5 digest instead of the CRC
 //  . New: it is now possible to specify additional dependency files at the command line using globling (*.tex)
@@ -39,13 +41,12 @@
 #define fgLatex			JadedHoboConsole::fg_lowhite
 #define fgIgnoredfile	JadedHoboConsole::fg_gray
 #define fgNormal		JadedHoboConsole::fg_lowhite
-
+#define fgDepFile		JadedHoboConsole::fg_cyan
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
-void launch(LPCTSTR cmdline);
-void precompile(LPCTSTR texbasename);
-void compile(LPCTSTR texbasename);
-void fullcompile(LPCTSTR texbasename);
+DWORD launch(LPCTSTR cmdline);
+bool precompile(LPCTSTR texbasename);
+bool compile(LPCTSTR texbasename);
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 
 #define PREAMBLE_BASENAME       "preamble"
@@ -57,6 +58,10 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 #define SRC_FRESHER	   0x01
 #define ERR_OUTABSENT  0x02
 #define ERR_SRCABSENT  0x04
+
+// recompilation required
+enum compilationreq { Unecessary = 0 , Partial = 1, Full =2} ;
+
 
 bool preamble_present = true;
 
@@ -91,6 +96,23 @@ void ShowUsage(int argc, TCHAR *argv[]) {
 	cout << "  3 Launch the compiler daemon with the command \"" << argv[0] << " main.tex *.tex\"" << endl;;
 	cout << "    where main.tex is the main file of your latex project." << endl;;
 
+}
+
+// perform the necessary compilation
+void make(compilationreq compreq, LPCSTR mainfilebase)
+{
+	if( compreq != Unecessary ) {
+		bool bCompOk = true;
+		if( compreq == Partial ) {
+			SetConsoleTitle("recompiling... - LatexDaemon");
+			bCompOk = compile(mainfilebase);
+		}
+		else if ( compreq == Full ) {
+			SetConsoleTitle("recompiling... - LatexDaemon");
+			bCompOk = precompile(mainfilebase) && compile(mainfilebase);
+		}
+		SetConsoleTitle(bCompOk ? "LatexDaemon" : "(errors) - LatexDaemon");
+	}
 }
 
 
@@ -175,7 +197,7 @@ int _tmain(int argc, TCHAR *argv[])
 	
 	preamble_present = !(res & ERR_SRCABSENT);
 	if ( !preamble_present ) {
-		cout << fgWarning << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n" << fgLatex;
+		cout << fgWarning << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
 	}
 
 	// The preamble file is present and the format file does not exist or has a timestamp
@@ -188,10 +210,7 @@ int _tmain(int argc, TCHAR *argv[])
 		else {		
 			cout << fgMsg << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
 		}
-		precompile(mainfile);
-		cout << fgMsg << "...................................\n";
-		compile(mainfile);
-		//cout << "-----------------------------------\n";
+		make(Full, mainfile);
 	}
 	
 	// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
@@ -210,11 +229,11 @@ int _tmain(int argc, TCHAR *argv[])
 		}
 		else if ( maintex_comp & ERR_OUTABSENT ) {
 			cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
-			compile(mainfile);
+			make(Partial, mainfile);
 		}
 		else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
 			cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
-			compile(mainfile);
+			make(Partial, mainfile);
 		}
 		// else 
 		//   We have maintex_comp == OUT_FRESHER and dependency_fresher =false therfore no need to recompile.
@@ -242,7 +261,7 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 
 
 // Launch an external program
-void launch(LPCTSTR cmdline)
+DWORD launch(LPCTSTR cmdline)
 {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
@@ -265,44 +284,62 @@ void launch(LPCTSTR cmdline)
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
 		cout << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n";
-		return;
+		return -1;
 	}
 	free(szCmdline);
 
 	// Wait until child process exits.
 	WaitForSingleObject( pi.hProcess, INFINITE );
-
+	
+	// Get the return code
+	DWORD dwRet;
+	GetExitCodeProcess( pi.hProcess, &dwRet);
+	
 	// Close process and thread handles. 
 	CloseHandle( pi.hProcess );
 	CloseHandle( pi.hThread );
+
+	return dwRet;
 }
 
 // Precompile the preamble into the format file "texfile.fmt"
-void precompile(LPCTSTR texbasename)
+bool precompile(LPCTSTR texbasename)
 {
 	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&latex\"  \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
-	cout << " Running '" << cmdline << "'\n";
-	launch(cmdline.c_str());	
+	cout << fgMsg << "-- Creation of the format file...\n";
+	cout << "running '" << cmdline << "'\n" << fgLatex;
+	return 0==launch(cmdline.c_str());
 }
 
 
 // Compile the final tex file using the precompiled preamble
-void compile(LPCTSTR texbasename)
+bool compile(LPCTSTR texbasename)
 {
+	cout << fgMsg << "-- Compilation of " << texbasename << ".tex.\n";
+
 	// preamble present? Then compile using the precompiled preamble.
 	if(  preamble_present ) {
 		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
 		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-		launch(cmdline.c_str());
+		return 0==launch(cmdline.c_str());
 	}
 	// no preamble: compile the latex file without the standard latex format file.
 	else {
 		string cmdline = string("latex -interaction=nonstopmode -src-specials ")+texbasename+".tex";
 		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-		launch(cmdline.c_str());
+		return 0==launch(cmdline.c_str());
 	}
 }
 
+VOID CALLBACK FileIOCompletionRoutine(
+  DWORD dwErrorCode,
+  DWORD dwNumberOfBytesTransfered,
+  LPOVERLAPPED lpOverlapped
+)
+{
+	int i;
+	i=0;
+}
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 {
@@ -334,68 +371,83 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
 		NULL, /* security descriptor */
 		OPEN_EXISTING, /* how to create */
-		FILE_FLAG_BACKUP_SEMANTICS, /* file attributes */
+		FILE_FLAG_BACKUP_SEMANTICS  | FILE_FLAG_OVERLAPPED, /* file attributes */
 		NULL /* file with attributes to copy */
 	  );
 
-	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
+	BYTE buffer [2][1024*sizeof(FILE_NOTIFY_INFORMATION )];
 	FILE_NOTIFY_INFORMATION *pFileNotify;
 	DWORD BytesReturned;
 	char filename[_MAX_FNAME];
     cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n";
-	SetConsoleTitle("Latex daemon");
-	while( ReadDirectoryChangesW(
+	SetConsoleTitle("LatexDaemon");
+	
+	int curBuff = 0;
+	OVERLAPPED overlapped;
+	overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
-			 &buffer, /* read results buffer */
-			 sizeof(buffer), /* length of buffer */
+			 &buffer[curBuff], /* read results buffer */
+			 sizeof(buffer[0]), /* length of buffer */
+			 FALSE, /* monitoring option */
+			 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
+			 FILE_NOTIFY_CHANGE_LAST_WRITE 
+			 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
+			 , /* filter conditions */
+			 NULL, /* bytes returned */
+			 &overlapped, /* overlapped buffer */
+			 FileIOCompletionRoutine); /* completion routine */
+
+	while( 1 ) ;
+
+	{
+		//GetOverlappedResult(hDir, &overlapped, &BytesReturned, TRUE);
+		ReadDirectoryChangesW(
+			 hDir, /* handle to directory */
+			 &buffer[curBuff], /* read results buffer */
+			 sizeof(buffer[0]), /* length of buffer */
 			 FALSE, /* monitoring option */
 			 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
 			 FILE_NOTIFY_CHANGE_LAST_WRITE
 			 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
 			 , /* filter conditions */
-			 &BytesReturned, /* bytes returned */
-			 NULL, /* overlapped buffer */
-			 NULL)) /* completion routine */
-	{
+			 NULL, /* bytes returned */
+			 &overlapped, /* overlapped buffer */
+			 FileIOCompletionRoutine); /* completion routine */
+
 		cout << "\r                                                       \r";
-		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
+		//////////////
+		// Check if some source files have changed and compute the according compilation requirement 
+		compilationreq compreq = Unecessary;
+		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer[curBuff];
 		do { 
 			// Convert the filename from unicode string to oem string
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
- 
+
 			if( pFileNotify->Action != FILE_ACTION_MODIFIED )
-				cout << ".\"" << filename << "\" touched\n" ;
+				cout << fgIgnoredfile << ".\"" << filename << "\" touched\n" ;
 			else
 			{
 				md5 dg_new;
 				// modification of the tex file?
 				if( !_tcscmp(filename,maintexfilename.c_str())  ) {
 					// has the digest changed?
-					if( dg_new.DigestFile(maintexfilename.c_str()) &&
-						(dg_tex != dg_new) ) {
+					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
 						dg_tex = dg_new;
-						SetConsoleTitle("recompiling... - Latex daemon");
-						cout << fgMsg << "+ changes detected in " << maintexfilename << ", let's recompile it...\n";
-						compile(mainfilebase);
-						//cout << fgMsg << "-----------------------------------\n";
+						cout << fgDepFile << "+ " << maintexfilename << " changed\n";
+						compreq = max(Partial, compreq);
 					}
 					else
-						cout << fgNormal << "-\"" << filename << "\" modified but digest preserved\n" ;
+						cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
 				}
 				
 				// modification of the preamble file?
 				else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME)  ) {
-					if( (dg_new.DigestFile(PREAMBLE_FILENAME)) &&
-						(dg_preamble != dg_new) ) {
+					if( dg_new.DigestFile(PREAMBLE_FILENAME) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
-						SetConsoleTitle("recompiling... - Latex daemon");
-						cout << fgMsg << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
-						cout << "  Let us recreate the format file and recompile " << mainfilebase << ".tex.\n";
-						precompile(mainfilebase);
-						cout << fgMsg << "...................................\n";
-						compile(mainfilebase);
-						//cout << fgMsg << "-----------------------------------\n";
+						cout << fgDepFile << "+ \"" << PREAMBLE_FILENAME << "\" changed (preamble file).\n";
+						compreq = max(Full, compreq);
 					}
 					else
 						cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
@@ -409,13 +461,10 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 						if(!_tcscmp(filename,glob.File(i))) break;
 
 					if( i<glob.FileCount() ) {
-						if ( dg_new.DigestFile(glob.File(i)) &&
-							dg_deps[i] != dg_new ) {
+						if ( dg_new.DigestFile(glob.File(i)) && (dg_deps[i]!=dg_new) ) {
 							dg_deps[i] = dg_new;
-							SetConsoleTitle("recompiling... - Latex daemon");
-							cout << fgMsg << "+ changes detected in the dependency file " << glob.File(i) << ", let's recompile the main file.\n";
-							compile(mainfilebase);
-							//cout << fgMsg << "-----------------------------------\n";
+							cout << fgDepFile << "+ \"" << glob.File(i) << "\" changed (dependency file).\n";
+							compreq = max(Partial, compreq);
 						}
 						else
 							cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
@@ -425,13 +474,18 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 						cout << fgIgnoredfile << ".\"" << filename << "\" modified\n";
 				}
 			}
+
 			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
-			SetConsoleTitle("Latex daemon");
 		}
 		while( pFileNotify->NextEntryOffset );
 
+		//////////////
+		// perform the necessary compilations
+		make(compreq, mainfilebase);
+
 		cout << fgMsg << "-- waiting for changes...";
 	}
-	/* DWORD Buffer.NextEntryOffset; */
+	CloseHandle(overlapped.hEvent);
     CloseHandle(hDir);
 }
+
