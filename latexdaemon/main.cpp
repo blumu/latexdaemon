@@ -9,6 +9,7 @@
 // Acknowledgment:
 // - The MD5 class is a modification of CodeGuru's one: http://www.codeguru.com/Cpp/Cpp/algorithms/article.php/c5087
 // - Command line processing routine from The Code Project: http://www.codeproject.com/useritems/SimpleOpt.asp
+// - Console color header file (Console.h) from: http://www.codeproject.com/cpp/AddColorConsole.asp
 
 #define _WIN32_WINNT  0x0400
 #define _CRT_SECURE_NO_DEPRECATE
@@ -23,11 +24,20 @@
 #include <sys/stat.h>
 #include <time.h>
 #include "md5.h"
+#include "console.h"
 #include "SimpleOpt.h"
 #include "SimpleGlob.h"
 
 
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename);
+#define fgMsg			JadedHoboConsole::fg_green
+#define fgErr			JadedHoboConsole::fg_red
+#define fgWarning		JadedHoboConsole::fg_yellow
+#define fgLatex			JadedHoboConsole::fg_lowhite
+#define fgIgnoredfile	JadedHoboConsole::fg_gray
+#define fgNormal		JadedHoboConsole::fg_lowhite
+
+
+void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
 void launch(LPCTSTR cmdline);
 void precompile(LPCTSTR texbasename);
 void compile(LPCTSTR texbasename);
@@ -128,27 +138,29 @@ int _tmain(int argc, TCHAR *argv[])
         return 1;
     }
 
-    for (int n = 0; n < glob.FileCount(); ++n)
-        _tprintf(_T("file %2d: '%s'\n"), n, glob.File(n));
-
-	
-	if(glob.FileCount() == 0)
-		return 1;
+    cout << "Main file: '" << glob.File(0) << "'\n";
 
 	TCHAR drive[4];
 	TCHAR dir[_MAX_DIR];
-	TCHAR file[_MAX_FNAME];
+	TCHAR mainfile[_MAX_FNAME];
 	TCHAR ext[_MAX_EXT];
 	TCHAR fullpath[_MAX_PATH];
 
 	_fullpath( fullpath, glob.File(0), _MAX_PATH );
-	cout << "The full path is " << fullpath << "\n";
-	_tsplitpath(fullpath, drive, dir, file, ext);
+	_tsplitpath(fullpath, drive, dir, mainfile, ext);
+	cout << "Directory: " << dir << "\n";
 
 	if(  _tcsncmp(ext, ".tex", 4) )	{
-		cerr << "Error: the file has not the .tex extension!\n\n";
+		cerr << fgErr << "Error: the file has not the .tex extension!\n\n";
 		return 1;
 	}
+
+	cout << "Dependencies:\n";
+    for (int n = 1; n < glob.FileCount(); ++n)
+		_tprintf(_T("  %2d: '%s'\n"), n, glob.File(n));
+
+	if(glob.FileCount() == 0)
+		return 1;
 
 	// change current directory
 	string path = string(drive) +  dir;
@@ -159,47 +171,47 @@ int _tmain(int argc, TCHAR *argv[])
 	
 	preamble_present = !(res & ERR_SRCABSENT);
 	if ( !preamble_present ) {
-		cout << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
+		cout << fgWarning << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n" << fgLatex;
 	}
 
 	// The preamble file is present and the format file does not exist or has a timestamp
 	// older than the preamble file : then recreate the format file and recompile the .tex file.
 	if( preamble_present &&  (res == SRC_FRESHER || (res & ERR_OUTABSENT)) ) {
 		if( res == SRC_FRESHER ) {
-			 cout << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
-			 cout << "  Let's recreate the format file and recompile " << file << ".tex.\n";
+			 cout << fgMsg << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
+			 cout << fgMsg << "  Let's recreate the format file and recompile " << mainfile << ".tex.\n";
 		}
 		else {		
-			cout << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
+			cout << fgMsg << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
 		}
-		precompile(file);
+		precompile(mainfile);
 		cout << "...................................\n";
-		compile(file);
+		compile(mainfile);
 		cout << "-----------------------------------\n";
 	}
 	
 	// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
 	else {
-		int res = compare_timestamp((string(file)+".tex").c_str(), (string(file)+".dvi").c_str());
+		int res = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
 		if ( res & ERR_SRCABSENT ) {
-			cout << "File " << file << ".tex not found!\n";
+			cout << fgErr << "File " << mainfile << ".tex not found!\n";
 			return 2;
 		}
 		else if ( res & ERR_OUTABSENT ) {
-			cout << "+ " << file << ".dvi does not exists. Let's create it...\n";
-			compile(file);
-			cout << "-----------------------------------\n";
+			cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
+			compile(mainfile);
+			//cout << fgMsg << "-----------------------------------\n";
 		}
 		else if( res == SRC_FRESHER ) {
-			cout << "+ " << file << ".tex has been modified since last run. Let's recompile it...\n";
-			compile(file);
-			cout << "-----------------------------------\n";
+			cout << fgMsg << "+ " << mainfile << ".tex has been modified since last run. Let's recompile it...\n";
+			compile(mainfile);
+			//cout << fgMsg << "-----------------------------------\n";
 		}
 		// else res == OUT_FRESHER : no need to recompile.
 	}
 
 	// watch for changes
-    WatchTexFiles(path.c_str(), file);
+    WatchTexFiles(path.c_str(), mainfile, glob);
 
 	return 0;
 }
@@ -270,34 +282,38 @@ void compile(LPCTSTR texbasename)
 	// preamble present? Then compile using the precompiled preamble.
 	if(  preamble_present ) {
 		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
-		cout << " Running '" << cmdline << "'\n";
+		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
 		launch(cmdline.c_str());
 	}
 	// no preamble: compile the latex file without the standard latex format file.
 	else {
 		string cmdline = string("latex -interaction=nonstopmode -src-specials ")+texbasename+".tex";
-		cout << " Running '" << cmdline << "'\n";
+		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
 		launch(cmdline.c_str());
 	}
 }
 
 
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
+void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 {
-	string texfilename = string(texbasename) + ".tex";
-
-
-	// digest of the tex file and the preamble file
-	md5 dg_tex, dg_preamble;
-	
-	// Compute the digest of the tex file and the preamble file
-	if( !dg_tex.DigestFile(texfilename.c_str()) ) {
-		cerr << "File " << texfilename << " cannot be found or opened!\n";
-		return;
+	// get the digest of the dependcy files
+	md5 *dg_deps = new md5 [glob.FileCount()];
+    for (int n = 0; n < glob.FileCount(); ++n)
+	{
+		if( !dg_deps[n].DigestFile(glob.File(n)) ) {
+			cerr << "File " << glob.File(n) << " cannot be found or opened!\n";
+			return;
+		}
 	}
 
+	// get the digest of the main tex file
+	string maintexfilename = string(mainfilebase) + ".tex";
+	md5 &dg_tex = dg_deps[0];
+
+	// get the digest of the preamble file
+	md5 dg_preamble;
 	if( preamble_present && !dg_preamble.DigestFile(PREAMBLE_FILENAME) ) {
-		cerr << "File " << PREAMBLE_FILENAME << " cannot be found or opened!\n";
+		cerr << "File " << PREAMBLE_FILENAME << " cannot be found or opened!\n" << fgLatex;
 		return;
 	}
 
@@ -316,7 +332,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 	FILE_NOTIFY_INFORMATION *pFileNotify;
 	DWORD BytesReturned;
 	char filename[_MAX_FNAME];
-    cout << "-- Watching directory " << texpath << " for changes...\n";
+    cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n";
 	SetConsoleTitle("Latex daemon");
 	while( ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
@@ -331,29 +347,31 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 			 NULL, /* overlapped buffer */
 			 NULL)) /* completion routine */
 	{
-		cout << "\r";
+		cout << "\r                                                       \r";
 		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
 		do { 
 			// Convert the filename from unicode string to oem string
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
  
-			if( pFileNotify->Action == FILE_ACTION_MODIFIED )
+			if( pFileNotify->Action != FILE_ACTION_MODIFIED )
+				cout << ".\"" << filename << "\" touched\n" ;
+			else
 			{
 				md5 dg_new;
 				// modification of the tex file?
-				if( !_tcscmp(filename,texfilename.c_str())  ) {
+				if( !_tcscmp(filename,maintexfilename.c_str())  ) {
 					// has the digest changed?
-					if( dg_new.DigestFile(texfilename.c_str()) &&
+					if( dg_new.DigestFile(maintexfilename.c_str()) &&
 						(dg_tex != dg_new) ) {
 						dg_tex = dg_new;
 						SetConsoleTitle("recompiling... - Latex daemon");
-						cout << "+ changes detected in " << texfilename << ", let's recompile it...\n";
-						compile(texbasename);
-						cout << "-----------------------------------\n";
+						cout << fgMsg << "+ changes detected in " << maintexfilename << ", let's recompile it...\n";
+						compile(mainfilebase);
+						//cout << fgMsg << "-----------------------------------\n";
 					}
 					else
-						cout << "-\"" << filename << "\" modified but digest preserved\n" ;
+						cout << fgNormal << "-\"" << filename << "\" modified but digest preserved\n" ;
 				}
 				
 				// modification of the preamble file?
@@ -362,29 +380,47 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename)
 						(dg_preamble != dg_new) ) {
 						dg_preamble = dg_new;
 						SetConsoleTitle("recompiling... - Latex daemon");
-						cout << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
-						cout << "  Let us recreate the format file and recompile " << texbasename << ".tex.\n";
-						precompile(texbasename);
-						cout << "...................................\n";
-						compile(texbasename);
-						cout << "-----------------------------------\n";
+						cout << fgMsg << "+ changes detected in the preamble file " << PREAMBLE_FILENAME << ".\n";
+						cout << "  Let us recreate the format file and recompile " << mainfilebase << ".tex.\n";
+						precompile(mainfilebase);
+						cout << fgMsg << "...................................\n";
+						compile(mainfilebase);
+						//cout << fgMsg << "-----------------------------------\n";
 					}
 					else
-						cout << "-\"" << filename << "\" modified but digest preserved\n" ;
+						cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
 				}
+				
+				// another file
 				else {
-					cout << ".\"" << filename << "\" modified\n" ;
+					// is it a dependency file?
+					int i = 1;
+					for(i=1; i<glob.FileCount(); i++)
+						if(!_tcscmp(filename,glob.File(i))) break;
+
+					if( i<glob.FileCount() ) {
+						if ( dg_new.DigestFile(glob.File(i)) &&
+							dg_deps[i] != dg_new ) {
+							dg_deps[i] = dg_new;
+							SetConsoleTitle("recompiling... - Latex daemon");
+							cout << fgMsg << "+ changes detected in the dependency file " << glob.File(i) << ", let's recompile the main file.\n";
+							compile(mainfilebase);
+							//cout << fgMsg << "-----------------------------------\n";
+						}
+						else
+							cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					}
+					// not a revelant file ...				
+					else
+						cout << fgIgnoredfile << ".\"" << filename << "\" modified\n";
 				}
-			}
-			else {
-				cout << ".\"" << filename << "\" touched\n" ;
 			}
 			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
 			SetConsoleTitle("Latex daemon");
 		}
 		while( pFileNotify->NextEntryOffset );
 
-		cout << "-- waiting for changes...";
+		cout << fgMsg << "-- waiting for changes...";
 	}
 	/* DWORD Buffer.NextEntryOffset; */
     CloseHandle(hDir);
