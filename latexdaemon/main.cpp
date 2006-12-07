@@ -3,7 +3,11 @@
 #define VERSION			0.4
 
 // List of changes:
-// 0.4: change from crc to md5
+// 0.4
+//  . Change: compute the MD5 digest instead of the CRC
+//  . New: it is now possible to specify additional dependency files at the command line using globling (*.tex)
+//    The first file being the main tex file.
+//  . New: console colors to distinguish Latex output from Latexdaemon output
 // 0.1: first version, September 2006
 
 // Acknowledgment:
@@ -28,7 +32,7 @@
 #include "SimpleOpt.h"
 #include "SimpleGlob.h"
 
-
+// console colors used
 #define fgMsg			JadedHoboConsole::fg_green
 #define fgErr			JadedHoboConsole::fg_red
 #define fgWarning		JadedHoboConsole::fg_yellow
@@ -185,29 +189,35 @@ int _tmain(int argc, TCHAR *argv[])
 			cout << fgMsg << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
 		}
 		precompile(mainfile);
-		cout << "...................................\n";
+		cout << fgMsg << "...................................\n";
 		compile(mainfile);
-		cout << "-----------------------------------\n";
+		//cout << "-----------------------------------\n";
 	}
 	
 	// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
 	else {
-		int res = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
-		if ( res & ERR_SRCABSENT ) {
+		// check if the main file has been modified since the creation of the dvi file
+		int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
+
+		// check if a dependency file has been modified since the creation of the dvi file
+		bool dependency_fresher = false;
+		for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
+			dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+".dvi").c_str()) ;
+
+		if ( maintex_comp & ERR_SRCABSENT ) {
 			cout << fgErr << "File " << mainfile << ".tex not found!\n";
 			return 2;
 		}
-		else if ( res & ERR_OUTABSENT ) {
+		else if ( maintex_comp & ERR_OUTABSENT ) {
 			cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
 			compile(mainfile);
-			//cout << fgMsg << "-----------------------------------\n";
 		}
-		else if( res == SRC_FRESHER ) {
-			cout << fgMsg << "+ " << mainfile << ".tex has been modified since last run. Let's recompile it...\n";
+		else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
+			cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
 			compile(mainfile);
-			//cout << fgMsg << "-----------------------------------\n";
 		}
-		// else res == OUT_FRESHER : no need to recompile.
+		// else 
+		//   We have maintex_comp == OUT_FRESHER and dependency_fresher =false therfore no need to recompile.
 	}
 
 	// watch for changes
