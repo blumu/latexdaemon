@@ -23,6 +23,8 @@
 #include <sys/stat.h>
 #include <time.h>
 #include "md5.h"
+#include "SimpleOpt.h"
+#include "SimpleGlob.h"
 
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR texbasename);
@@ -46,20 +48,92 @@ bool preamble_present = true;
 
 using namespace std;
 
+// define the ID values to indentify the option
+enum { OPT_HELP };
+
+// declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
+// for details of each entry in this structure. In summary they are:
+//  1. ID for this option. This will be returned from OptionId() during processing.
+//     It may be anything >= 0 and may contain duplicates.
+//  2. Option as it should be written on the command line
+//  3. Type of the option. See the header file for details of all possible types.
+//     The SO_REQ_SEP type means an argument is required and must be supplied
+//     separately, e.g. "-f FILE"
+//  4. The last entry must be SO_END_OF_OPTIONS.
+//
+CSimpleOpt::SOption g_rgOptions[] = {
+    { OPT_HELP, _T("-?"),     SO_NONE    }, // "-?"
+    { OPT_HELP, _T("--help"), SO_NONE    }, // "--help"
+    SO_END_OF_OPTIONS                       // END
+};
+
+// show the usage of this program
+void ShowUsage(int argc, TCHAR *argv[]) {
+	cout << "Usage: latexdaemon [--help] MAINTEXFILE DEPENDENCYFILES\n\n";
+	cout << "Instructions:" << endl;;
+	cout << "  1 Move the preamble from your .tex file to a new file named preamble.tex." << endl << endl;;
+	cout << "  2 Insert the following line at the beginning of your .tex file:" << endl;;
+	cout << "      \\ifx\\incrcompilation\\undefined \\input preamble.tex \\fi" << endl << endl ;;
+	cout << "  3 Launch the compiler daemon with the command \"" << argv[0] << " main.tex *.tex\"" << endl;;
+	cout << "    where main.tex is the main file of your latex project." << endl;;
+
+}
+
 
 int _tmain(int argc, TCHAR *argv[])
 {
 	cout << "LatexDaemon " << VERSION << " by William Blum, December 2006" << endl << endl;;
-    if(argc <= 1)
-	{
-		cout << "Instructions:" << endl;;
-		cout << "  1 Move the preamble from your .tex file to a new file named preamble.tex." << endl << endl;;
-		cout << "  2 Insert the following line at the beginning of your .tex file:" << endl;;
-		cout << "      \\ifx\\incrcompilation\\undefined \\input preamble.tex \\fi" << endl << endl ;;
-		cout << "  3 Launch the compiler daemon with the command \"" << argv[0] << " file.tex\"" << endl;;
-		cout << "    where file.tex is your tex file."<< endl;;
+
+
+	   unsigned int uiFlags = 0;
+
+    CSimpleOpt args(argc, argv, g_rgOptions, true);
+    while (args.Next()) {
+        if (args.LastError() != SO_SUCCESS) {
+            TCHAR * pszError = _T("Unknown error");
+            switch (args.LastError()) {
+            case SO_OPT_INVALID:
+                pszError = _T("Unrecognized option");
+                break;
+            case SO_OPT_MULTIPLE:
+                pszError = _T("Option matched multiple strings");
+                break;
+            case SO_ARG_INVALID:
+                pszError = _T("Option does not accept argument");
+                break;
+            case SO_ARG_INVALID_TYPE:
+                pszError = _T("Invalid argument format");
+                break;
+            case SO_ARG_MISSING:
+                pszError = _T("Required argument is missing");
+                break;
+            }
+            _tprintf(
+                _T("%s: '%s' (use --help to get command line help)\n"),
+                pszError, args.OptionText());
+            continue;
+        }
+
+        if (args.OptionId() == OPT_HELP) {
+            ShowUsage(argc,argv);
+            return 0;
+        }
+
+        uiFlags |= (unsigned int) args.OptionId();
+    }
+
+    CSimpleGlob glob(uiFlags);
+    if (SG_SUCCESS != glob.Add(args.FileCount(), args.Files())) {
+        _tprintf(_T("Error while globbing files\n"));
+        return 1;
+    }
+
+    for (int n = 0; n < glob.FileCount(); ++n)
+        _tprintf(_T("file %2d: '%s'\n"), n, glob.File(n));
+
+	
+	if(glob.FileCount() == 0)
 		return 1;
-	}
 
 	TCHAR drive[4];
 	TCHAR dir[_MAX_DIR];
@@ -67,7 +141,7 @@ int _tmain(int argc, TCHAR *argv[])
 	TCHAR ext[_MAX_EXT];
 	TCHAR fullpath[_MAX_PATH];
 
-	_fullpath( fullpath, argv[1], _MAX_PATH );
+	_fullpath( fullpath, glob.File(0), _MAX_PATH );
 	cout << "The full path is " << fullpath << "\n";
 	_tsplitpath(fullpath, drive, dir, file, ext);
 
