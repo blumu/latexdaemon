@@ -421,7 +421,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 
 	// get the digest of the main tex file
 	string maintexfilename = string(mainfilebase) + ".tex";
-	md5 &dg_tex = dg_deps[0];
+	md5 dg_tex = dg_deps[0];
 
 	// get the digest of the preamble file
 	md5 dg_preamble;
@@ -512,7 +512,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 				// another file
 				else {
 					// is it a dependency file?
-					int i = 1;
+					int i;
 					for(i=1; i<glob.FileCount(); i++)
 						if(!_tcscmp(filename,glob.File(i))) break;
 
