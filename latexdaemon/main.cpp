@@ -8,6 +8,9 @@
 //  until the end of the execution of the make "thread"
 
 // List of changes:
+// 0.6
+//  . correction: when computing the MD5, the file is opened with reading sharing access to ensure that
+//  the file content is not modified while computing the digest.
 // 0.5
 //  . new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
 //    a source file is modified during compilation.
@@ -488,7 +491,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 				if( !_tcscmp(filename,maintexfilename.c_str())  ) {
 					// has the digest changed?
 					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
-						dg_tex = dg_new;
+ 						dg_tex = dg_new;
 						if(!hMakeThread) cout << fgDepFile << "+ " << maintexfilename << " changed\n";
 						maketype = max(Partial, maketype);
 					}

@@ -35,10 +35,14 @@
 
 #define _CRT_SECURE_NO_DEPRECATE
 #include <assert.h>
+#include <windows.h>
 #include <memory.h>
 #include <stdio.h>
+#include <iostream>
 #include <string.h>
+#include <conio.h>
 #include "md5.h"
+#include "console.h"
 
 
 static unsigned char PADDING[64] =
@@ -144,25 +148,82 @@ char* MD5File(char* szFilename)
 
 // MD5File: computes the digest from the content of a file.
 // Return true if no error occurs
+//bool md5::DigestFile(const char* szFilename)
+//{
+//	FILE* file;
+//	uint4 nLen;
+//	unsigned char chBuffer[1024];
+//
+//	try
+//	{
+//		memset(chBuffer, 0, 1024);
+//
+//		if ((file = fopen (szFilename, "rb")) != NULL)
+//		{
+//			Init();
+//			while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
+//				Update(chBuffer, nLen);
+//
+//			Finalize();
+//
+//			fclose (file);
+//		}
+//		else {
+//			printf("can't open file!\n");
+//			return false;
+//		}
+//	}
+//	catch(...)
+//	{
+//		return false;  // failed
+//	}
+//
+//	return true;
+//}
+//
+
+
+// MD5File: computes the digest from the content of a file.
+// Return true if no error occurs
 bool md5::DigestFile(const char* szFilename)
 {
-	FILE* file;
-	uint4 nLen;
 	unsigned char chBuffer[1024];
 
 	try
 	{
 		memset(chBuffer, 0, 1024);
+		
+		// Open the file
+		HANDLE hFile = CreateFile(szFilename,
+			GENERIC_READ,
+			FILE_SHARE_READ,
+			NULL,
+			OPEN_EXISTING,
+			FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_SEQUENTIAL_SCAN,
+			NULL);
 
-		if ((file = fopen (szFilename, "rb")) != NULL)
+		if(hFile == INVALID_HANDLE_VALUE) {
+			//dwErrorCode = GetLastError();
+			//std::cout << JadedHoboConsole::fg_red << "can't open file " << szFilename << ", error " << GetLastError() << "\n";
+			return false;
+		}
+		else
 		{
-			while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
-				Update(chBuffer, nLen);
-
-			Finalize();
 			Init();
 
-			fclose (file);
+			DWORD dwBytesRead;
+			BOOL bSuccess = ReadFile(hFile, chBuffer, sizeof(chBuffer), &dwBytesRead, NULL);
+			while(bSuccess && dwBytesRead)
+			{
+				Update(chBuffer, dwBytesRead);
+				bSuccess = ReadFile(hFile, chBuffer, sizeof(chBuffer), &dwBytesRead, NULL);
+			}
+
+			//while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
+
+			Finalize();
+
+			if(hFile != NULL) CloseHandle(hFile);
 		}
 	}
 	catch(...)
@@ -172,6 +233,8 @@ bool md5::DigestFile(const char* szFilename)
 
 	return true;
 }
+
+
 
 
 // md5::Init
