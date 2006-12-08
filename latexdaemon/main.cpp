@@ -2,12 +2,18 @@
 // december 2006
 #define VERSION			0.5
 
+// TODO:
+//  At the moment, messages reporting modified files are not shown while the "make" thread is running 
+//  in order to avoid printf interleaving. The solution would be to delay the printing of these messages
+//  until the end of the execution of the make "thread"
+
 // List of changes:
 // 0.5
-//  . indicates if there are errors during Latex compilation in the title of the console
-// 0.4
+//  . new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
+//    a source file is modified during compilation.
+//  . new: the title of the console indicates if some errors occured during Latex compilation.
 //  . Change: compute the MD5 digest instead of the CRC
-//  . New: it is now possible to specify additional dependency files at the command line using globling (*.tex)
+//  . New: it is now possible to specify additional dependency files at the command line using globling (for instance *.tex)
 //    The first file being the main tex file.
 //  . New: console colors to distinguish Latex output from Latexdaemon output
 // 0.1: first version, September 2006
@@ -21,6 +27,7 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include <windows.h>
 #include <Winbase.h>
+#include <conio.h>
 #include <string>
 #include <iostream>
 #include <stdlib.h>
@@ -34,6 +41,8 @@
 #include "SimpleOpt.h"
 #include "SimpleGlob.h"
 
+using namespace std;
+
 // console colors used
 #define fgMsg			JadedHoboConsole::fg_green
 #define fgErr			JadedHoboConsole::fg_red
@@ -43,29 +52,44 @@
 #define fgNormal		JadedHoboConsole::fg_lowhite
 #define fgDepFile		JadedHoboConsole::fg_cyan
 
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
-DWORD launch(LPCTSTR cmdline);
-bool precompile(LPCTSTR texbasename);
-bool compile(LPCTSTR texbasename);
-int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 
 #define PREAMBLE_BASENAME       "preamble"
 #define PREAMBLE_FILENAME       PREAMBLE_BASENAME ".tex"
 #define MAXCMDLINE				1024
 
-
+// result of timestamp comparison
 #define OUT_FRESHER	   0x00
 #define SRC_FRESHER	   0x01
 #define ERR_OUTABSENT  0x02
 #define ERR_SRCABSENT  0x04
 
-// recompilation required
-enum compilationreq { Unecessary = 0 , Partial = 1, Full =2} ;
+// constants determining which kind of recompilation is required 
+enum MAKETYPE { Unecessary = 0 , Partial = 1, Full =2} ;
 
+void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
+DWORD launch(LPCTSTR cmdline);
+bool fullcompile(LPCTSTR texbasename);
+bool compile(LPCTSTR texbasename);
+int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 
+// critical section for handling printf across the different threads
+CRITICAL_SECTION cs;
+
+// is the preamble present?
 bool preamble_present = true;
 
-using namespace std;
+// handle du "make" thread
+HANDLE hMakeThread = NULL;
+
+// Event fired when the make thread needs to be aborted
+HANDLE hEvtAbortMake = NULL;
+
+// type of the parameter passed to the "make" thread
+typedef struct {
+	MAKETYPE	maketype;
+	LPCTSTR		mainfilebasename;
+} MAKETHREADPARAM  ;
+
 
 // define the ID values to indentify the option
 enum { OPT_HELP };
@@ -86,6 +110,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     SO_END_OF_OPTIONS                       // END
 };
 
+
+
 // show the usage of this program
 void ShowUsage(int argc, TCHAR *argv[]) {
 	cout << "Usage: latexdaemon [--help] MAINTEXFILE DEPENDENCYFILES\n\n";
@@ -99,29 +125,47 @@ void ShowUsage(int argc, TCHAR *argv[]) {
 }
 
 // perform the necessary compilation
-void make(compilationreq compreq, LPCSTR mainfilebase)
+void make(MAKETYPE maketype, LPCSTR mainfilebasename)
 {
-	if( compreq != Unecessary ) {
+	if( maketype != Unecessary ) {
 		bool bCompOk = true;
-		if( compreq == Partial ) {
+		if( maketype == Partial ) {
 			SetConsoleTitle("recompiling... - LatexDaemon");
-			bCompOk = compile(mainfilebase);
+			bCompOk = compile(mainfilebasename);
 		}
-		else if ( compreq == Full ) {
+		else if ( maketype == Full ) {
 			SetConsoleTitle("recompiling... - LatexDaemon");
-			bCompOk = precompile(mainfilebase) && compile(mainfilebase);
+			bCompOk = fullcompile(mainfilebasename);
 		}
-		SetConsoleTitle(bCompOk ? "LatexDaemon" : "(errors) - LatexDaemon");
+		SetConsoleTitle(bCompOk ? "monitoring - LatexDaemon" : "(errors) monitoring - LatexDaemon");
 	}
+}
+
+void WINAPI MakeThread( void *param )
+{
+	ResetEvent(hEvtAbortMake);
+
+	//////////////
+	// perform the necessary compilations
+	MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
+	make(p->maketype, p->mainfilebasename);	
+	free(p);
+
+	cout <<	flush;
+	hMakeThread = NULL;
 }
 
 
 int _tmain(int argc, TCHAR *argv[])
 {
+	InitializeCriticalSection(&cs);
+
+	// create the event used to abort the "make" thread
+	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
+
 	cout << "LatexDaemon " << VERSION << " by William Blum, December 2006" << endl << endl;;
 
-
-	   unsigned int uiFlags = 0;
+    unsigned int uiFlags = 0;
 
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
@@ -238,12 +282,14 @@ int _tmain(int argc, TCHAR *argv[])
 		// else 
 		//   We have maintex_comp == OUT_FRESHER and dependency_fresher =false therfore no need to recompile.
 	}
-
-	// watch for changes
+	
     WatchTexFiles(path.c_str(), mainfile, glob);
 
+	CloseHandle(hEvtAbortMake);
 	return 0;
 }
+
+
 
 // compare the time stamp of source and target files
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
@@ -260,6 +306,7 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 }
 
 
+
 // Launch an external program
 DWORD launch(LPCTSTR cmdline)
 {
@@ -269,6 +316,9 @@ DWORD launch(LPCTSTR cmdline)
 
 	ZeroMemory( &si, sizeof(si) );
 	si.cb = sizeof(si);
+	//si.lpTitle = "latex";
+	//si.wShowWindow = SW_HIDE;
+	//si.dwFlags = STARTF_USESHOWWINDOW;
 	ZeroMemory( &pi, sizeof(pi) );
 
 	// Start the child process. 
@@ -277,24 +327,37 @@ DWORD launch(LPCTSTR cmdline)
 		NULL,           // Process handle not inheritable
 		NULL,           // Thread handle not inheritable
 		FALSE,          // Set handle inheritance to FALSE
-		0,              // No creation flags
+		0,
+		//CREATE_NEW_CONSOLE,              // No creation flags
 		NULL,           // Use parent's environment block
 		NULL,           // Use parent's starting directory 
 		&si,            // Pointer to STARTUPINFO structure
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
+		EnterCriticalSection( &cs );
 		cout << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n";
+        LeaveCriticalSection( &cs ); 
 		return -1;
 	}
 	free(szCmdline);
 
-	// Wait until child process exits.
-	WaitForSingleObject( pi.hProcess, INFINITE );
-	
-	// Get the return code
-	DWORD dwRet;
-	GetExitCodeProcess( pi.hProcess, &dwRet);
-	
+	// Wait until child process exits or the make process is aborted.
+	//WaitForSingleObject( pi.hProcess, INFINITE );	
+	HANDLE hp[2] = {pi.hProcess, hEvtAbortMake};
+	DWORD dwRet = 0;
+	switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
+	case WAIT_OBJECT_0:
+		// Get the return code
+		GetExitCodeProcess( pi.hProcess, &dwRet);
+		break;
+	case WAIT_OBJECT_0+1:
+		dwRet = -1;
+		TerminateProcess( pi.hProcess,1);
+		break;
+	default:
+		break;
+	}
+
 	// Close process and thread handles. 
 	CloseHandle( pi.hProcess );
 	CloseHandle( pi.hThread );
@@ -302,44 +365,47 @@ DWORD launch(LPCTSTR cmdline)
 	return dwRet;
 }
 
-// Precompile the preamble into the format file "texfile.fmt"
-bool precompile(LPCTSTR texbasename)
+
+// Recompile the preamble into the format file "texfile.fmt" and then compile the main file
+bool fullcompile(LPCTSTR texbasename)
 {
+	EnterCriticalSection( &cs );
 	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&latex\"  \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
 	cout << fgMsg << "-- Creation of the format file...\n";
-	cout << "running '" << cmdline << "'\n" << fgLatex;
-	return 0==launch(cmdline.c_str());
+	cout << "[running '" << cmdline << "']\n" << fgLatex;
+    LeaveCriticalSection( &cs ); 
+	DWORD dw = launch(cmdline.c_str());
+
+	if( dw )
+		return false;
+	else
+		return compile(texbasename);
 }
 
 
 // Compile the final tex file using the precompiled preamble
 bool compile(LPCTSTR texbasename)
 {
-	cout << fgMsg << "-- Compilation of " << texbasename << ".tex.\n";
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
 
 	// preamble present? Then compile using the precompiled preamble.
 	if(  preamble_present ) {
 		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
-		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+		cout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
+	    LeaveCriticalSection( &cs ); 
 		return 0==launch(cmdline.c_str());
 	}
 	// no preamble: compile the latex file without the standard latex format file.
 	else {
 		string cmdline = string("latex -interaction=nonstopmode -src-specials ")+texbasename+".tex";
 		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+	    LeaveCriticalSection( &cs ); 
 		return 0==launch(cmdline.c_str());
 	}
 }
 
-VOID CALLBACK FileIOCompletionRoutine(
-  DWORD dwErrorCode,
-  DWORD dwNumberOfBytesTransfered,
-  LPOVERLAPPED lpOverlapped
-)
-{
-	int i;
-	i=0;
-}
+
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 {
@@ -364,69 +430,57 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		return;
 	}
 
-
+	// open the directory to be monitored
 	HANDLE hDir = CreateFile(
 		texpath, /* pointer to the directory containing the tex files */
 		FILE_LIST_DIRECTORY,                /* access (read-write) mode */
 		FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
 		NULL, /* security descriptor */
 		OPEN_EXISTING, /* how to create */
-		FILE_FLAG_BACKUP_SEMANTICS  | FILE_FLAG_OVERLAPPED, /* file attributes */
+		FILE_FLAG_BACKUP_SEMANTICS  , //| FILE_FLAG_OVERLAPPED, /* file attributes */
 		NULL /* file with attributes to copy */
 	  );
 
-	BYTE buffer [2][1024*sizeof(FILE_NOTIFY_INFORMATION )];
-	FILE_NOTIFY_INFORMATION *pFileNotify;
-	DWORD BytesReturned;
-	char filename[_MAX_FNAME];
     cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n";
-	SetConsoleTitle("LatexDaemon");
+	SetConsoleTitle("monitoring - LatexDaemon");
 	
-	int curBuff = 0;
-	OVERLAPPED overlapped;
-	overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	ReadDirectoryChangesW(
-			 hDir, /* handle to directory */
-			 &buffer[curBuff], /* read results buffer */
-			 sizeof(buffer[0]), /* length of buffer */
-			 FALSE, /* monitoring option */
-			 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
-			 FILE_NOTIFY_CHANGE_LAST_WRITE 
-			 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
-			 , /* filter conditions */
-			 NULL, /* bytes returned */
-			 &overlapped, /* overlapped buffer */
-			 FileIOCompletionRoutine); /* completion routine */
+	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
 
-	while( 1 ) ;
-
+	while( 1 )
 	{
+		FILE_NOTIFY_INFORMATION *pFileNotify;
+		DWORD BytesReturned;
+
 		//GetOverlappedResult(hDir, &overlapped, &BytesReturned, TRUE);
 		ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
-			 &buffer[curBuff], /* read results buffer */
-			 sizeof(buffer[0]), /* length of buffer */
+			 &buffer, /* read results buffer */
+			 sizeof(buffer), /* length of buffer */
 			 FALSE, /* monitoring option */
 			 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
 			 FILE_NOTIFY_CHANGE_LAST_WRITE
 			 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
 			 , /* filter conditions */
-			 NULL, /* bytes returned */
-			 &overlapped, /* overlapped buffer */
-			 FileIOCompletionRoutine); /* completion routine */
+			 &BytesReturned, /* bytes returned */
+			 NULL, /* overlapped buffer */
+			 NULL); /* completion routine */
 
-		cout << "\r                                                       \r";
+		//EnterCriticalSection( &cs );
+		//cout << "                         \r";
+
 		//////////////
 		// Check if some source files have changed and compute the according compilation requirement 
-		compilationreq compreq = Unecessary;
-		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer[curBuff];
+		MAKETYPE maketype = Unecessary;
+		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
 		do { 
 			// Convert the filename from unicode string to oem string
+			char filename[_MAX_FNAME];
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
 
-			if( pFileNotify->Action != FILE_ACTION_MODIFIED )
-				cout << fgIgnoredfile << ".\"" << filename << "\" touched\n" ;
+			if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
+				if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" touched\n" ;
+			}
 			else
 			{
 				md5 dg_new;
@@ -435,22 +489,24 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 					// has the digest changed?
 					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
 						dg_tex = dg_new;
-						cout << fgDepFile << "+ " << maintexfilename << " changed\n";
-						compreq = max(Partial, compreq);
+						if(!hMakeThread) cout << fgDepFile << "+ " << maintexfilename << " changed\n";
+						maketype = max(Partial, maketype);
 					}
-					else
-						cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					else {
+						if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					}
 				}
 				
 				// modification of the preamble file?
 				else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME)  ) {
 					if( dg_new.DigestFile(PREAMBLE_FILENAME) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
-						cout << fgDepFile << "+ \"" << PREAMBLE_FILENAME << "\" changed (preamble file).\n";
-						compreq = max(Full, compreq);
+						if(!hMakeThread) cout << fgDepFile << "+ \"" << PREAMBLE_FILENAME << "\" changed (preamble file).\n";
+						maketype = max(Full, maketype);
 					}
-					else
-						cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					else {
+						if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					}
 				}
 				
 				// another file
@@ -463,29 +519,57 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 					if( i<glob.FileCount() ) {
 						if ( dg_new.DigestFile(glob.File(i)) && (dg_deps[i]!=dg_new) ) {
 							dg_deps[i] = dg_new;
-							cout << fgDepFile << "+ \"" << glob.File(i) << "\" changed (dependency file).\n";
-							compreq = max(Partial, compreq);
+							if(!hMakeThread) cout << fgDepFile << "+ \"" << glob.File(i) << "\" changed (dependency file).\n";
+							maketype = max(Partial, maketype);
 						}
-						else
-							cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+						else {
+							if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+						}
 					}
 					// not a revelant file ...				
-					else
-						cout << fgIgnoredfile << ".\"" << filename << "\" modified\n";
+					else {
+						if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" modified\n";
+					}
 				}
 			}
 
 			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
 		}
 		while( pFileNotify->NextEntryOffset );
+		//LeaveCriticalSection( &cs ); 
 
-		//////////////
-		// perform the necessary compilations
-		make(compreq, mainfilebase);
+		if( maketype != Unecessary ) {
+			/// abort the current "make" thread if it is already started
+			if( hMakeThread ) {
+				SetEvent(hEvtAbortMake);
+				// wait for the "make" thread to end
+				WaitForSingleObject(hMakeThread, INFINITE);
+			}			
+			
+			// Create a new "make" thread.
+			//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
+			//  otherwise, if we pass the address of a locally defined variable as a parameter to 
+			//  CreateThrear, the content of the structure may change
+			//  by the time the make thread is created (since the current thread runs concurrently).
+			MAKETHREADPARAM *p = new MAKETHREADPARAM;
+			p->maketype = maketype;
+			p->mainfilebasename = mainfilebase;
+			DWORD makethreadID;
+			hMakeThread = CreateThread( NULL,
+                    0,
+                    (LPTHREAD_START_ROUTINE) MakeThread,
+                    (LPVOID)p,
+                    0,
+                    &makethreadID);
+		}
 
-		cout << fgMsg << "-- waiting for changes...";
+		/*EnterCriticalSection( &cs );
+		if(!hMakeThread) cout << fgMsg << "-- waiting for changes...\r";
+		LeaveCriticalSection( &cs ); */
+
 	}
-	CloseHandle(overlapped.hEvent);
+//	CloseHandle(overlapped.hEvent);
     CloseHandle(hDir);
+
 }
 
