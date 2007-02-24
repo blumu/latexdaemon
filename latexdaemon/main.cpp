@@ -1,25 +1,14 @@
-// By william blum (http://web.comlab.ox.ac.uk/oucl/people/william.blum.html)
+// By william blum (http://william.famille-blum.org/software/index.html)
 // december 2006
-#define VERSION			0.5
+// last modfification 24 feb 2007
+#define VERSION			0.7
+
+// See changelog.html for the list of changes:.
 
 // TODO:
-//  At the moment, messages reporting modified files are not shown while the "make" thread is running 
-//  in order to avoid printf interleaving. The solution would be to delay the printing of these messages
-//  until the end of the execution of the make "thread"
-
-// List of changes:
-// 0.6
-//  . correction: when computing the MD5, the file is opened with reading sharing access to ensure that
-//  the file content is not modified while computing the digest.
-// 0.5
-//  . new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
-//    a source file is modified during compilation.
-//  . new: the title of the console indicates if some errors occured during Latex compilation.
-//  . Change: compute the MD5 digest instead of the CRC
-//  . New: it is now possible to specify additional dependency files at the command line using globling (for instance *.tex)
-//    The first file being the main tex file.
-//  . New: console colors to distinguish Latex output from Latexdaemon output
-// 0.1: first version, September 2006
+//  At the moment, messages reporting that some watched file has been modified are not shown while the "make" 
+//  thread is running. This is done in order to avoid printf interleaving. Another solution would 
+//  be to delay the printing of these messages until the end of the execution of the make "thread".
 
 // Acknowledgment:
 // - The MD5 class is a modification of CodeGuru's one: http://www.codeguru.com/Cpp/Cpp/algorithms/article.php/c5087
@@ -87,6 +76,10 @@ HANDLE hMakeThread = NULL;
 // Event fired when the make thread needs to be aborted
 HANDLE hEvtAbortMake = NULL;
 
+// Tex initialization file (can be specified as a command line parameter)
+string texinifile = "latex"; // use latex by default
+
+
 // type of the parameter passed to the "make" thread
 typedef struct {
 	MAKETYPE	maketype;
@@ -95,7 +88,7 @@ typedef struct {
 
 
 // define the ID values to indentify the option
-enum { OPT_HELP };
+enum { OPT_HELP, OPT_INI };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
 // for details of each entry in this structure. In summary they are:
@@ -108,23 +101,26 @@ enum { OPT_HELP };
 //  4. The last entry must be SO_END_OF_OPTIONS.
 //
 CSimpleOpt::SOption g_rgOptions[] = {
-    { OPT_HELP, _T("-?"),     SO_NONE    }, // "-?"
-    { OPT_HELP, _T("--help"), SO_NONE    }, // "--help"
-    SO_END_OF_OPTIONS                       // END
+    { OPT_HELP, _T("-?"),     SO_NONE   },
+    { OPT_HELP, _T("--help"), SO_NONE   },
+    { OPT_HELP, _T("-help"), SO_NONE    },
+    { OPT_INI,  _T("-ini"), SO_REQ_SEP  },
+    { OPT_INI,  _T("--ini"), SO_REQ_SEP },
+    SO_END_OF_OPTIONS                   // END
 };
 
 
 
 // show the usage of this program
 void ShowUsage(int argc, TCHAR *argv[]) {
-	cout << "Usage: latexdaemon [--help] MAINTEXFILE DEPENDENCYFILES\n\n";
+	cout << "Usage: latexdaemon [--help] [--ini inifile] MAINTEXFILE DEPENDENCYFILES\n\n";
 	cout << "Instructions:" << endl;;
 	cout << "  1 Move the preamble from your .tex file to a new file named preamble.tex." << endl << endl;;
 	cout << "  2 Insert the following line at the beginning of your .tex file:" << endl;;
 	cout << "      \\ifx\\incrcompilation\\undefined \\input preamble.tex \\fi" << endl << endl ;;
-	cout << "  3 Launch the compiler daemon with the command \"" << argv[0] << " main.tex *.tex\"" << endl;;
-	cout << "    where main.tex is the main file of your latex project." << endl;;
-
+	cout << "  3 Launch the daemon with the command \"" << argv[0] << " main.tex *.tex\"\n" << 
+		    "    (or \"" << argv[0] << " -ini pdflatex main.tex *.tex\" if you want to use pdflatex\n"<<
+			"    instead of latex) where main.tex is the main file of your latex project. "  << endl;;
 }
 
 // perform the necessary compilation
@@ -170,6 +166,11 @@ int _tmain(int argc, TCHAR *argv[])
 
     unsigned int uiFlags = 0;
 
+	if (argc <= 1 ) {
+		ShowUsage(argc,argv);
+		return 1;
+	}
+
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
         if (args.LastError() != SO_SUCCESS) {
@@ -201,13 +202,22 @@ int _tmain(int argc, TCHAR *argv[])
             ShowUsage(argc,argv);
             return 0;
         }
+        if (args.OptionId() == OPT_INI) {
+			texinifile = args.OptionArg();
+			cout << "Intiatialization file set to \"" << texinifile << "\"" << endl;;			
+        }
+
 
         uiFlags |= (unsigned int) args.OptionId();
     }
 
     CSimpleGlob glob(uiFlags);
-    if (SG_SUCCESS != glob.Add(args.FileCount(), args.Files())) {
-        _tprintf(_T("Error while globbing files\n"));
+    if (SG_SUCCESS != glob.Add(args.FileCount(), args.Files()) ) {
+        _tprintf(_T("Error while globbing files!\n"));
+        return 1;
+    }
+	if( args.FileCount() == 0 ){
+        _tprintf(_T("No input file specified!\n"));
         return 1;
     }
 
@@ -373,7 +383,7 @@ DWORD launch(LPCTSTR cmdline)
 bool fullcompile(LPCTSTR texbasename)
 {
 	EnterCriticalSection( &cs );
-	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&latex\"  \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
+	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&" + texinifile + "\" \"\\input ")+PREAMBLE_FILENAME+" \\dump\\endinput \"";
 	cout << fgMsg << "-- Creation of the format file...\n";
 	cout << "[running '" << cmdline << "']\n" << fgLatex;
     LeaveCriticalSection( &cs ); 

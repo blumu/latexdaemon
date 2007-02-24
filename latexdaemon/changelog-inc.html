@@ -1,0 +1,33 @@
+<p class="date"> 24 feb 2007 - Version 0.7 </p>
+<ul>
+	<li>new option "-ini" to specify which initialization file to use when compiling the preamble. This
+  can be use to compile a document with pdflatex instead of latex (using the parameter "-ini pdflatex")
+  </li>
+</ul>
+
+<p class="date"> 9 December 2006 - Version 0.6 </p>
+<ul>
+	<li>bug fixed: when computing the MD5, the file is opened with reading sharing access to
+ensure that the file content is not modified while computing the digest.</li>
+	<li>bug fixed: no more crashe when runned without parameter.  </li>
+</ul>
+
+<p class="date"> 8 December 2006 - Version 0.5 </p>
+<ul>
+        <li>new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
+        a source file is modified during compilation. <br>
+        <li>new: the title of the console indicates if some errors occured during Latex compilation. <br>
+</ul>
+
+<p class="date"> 7 December 2006 - Version 0.4 </p>
+<ul>
+        <li>Change: compute the MD5 digest instead of the CRC. </li>
+        <li>New: it is now possible to specify additional dependency files at the command line using globling (for instance *.tex)
+                  The first file being the main tex file. </li>
+        <li>New: console colors to distinguish Latex output from Latexdaemon output. </li>
+</ul>
+
+<p class="date"> 29 September 2006 - Version 0.3</p>
+
+<p class="date"> September 2006 - Version 0.1</p> 
+	First version released.
