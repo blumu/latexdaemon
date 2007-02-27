@@ -1,7 +1,8 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
-// december 2006
-// last modfification 24 feb 2007
-#define VERSION			0.7
+// Created in September 2006
+// Last modfification 25 feb 2007
+#define APP_NAME		"LatexDaemon"
+#define VERSION			0.9
 
 // See changelog.html for the list of changes:.
 
@@ -32,8 +33,18 @@
 #include "console.h"
 #include "SimpleOpt.h"
 #include "SimpleGlob.h"
-
 using namespace std;
+
+//////////
+/// Prototypes
+void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
+DWORD launch(LPCTSTR cmdline);
+bool fullcompile(LPCTSTR texbasename);
+bool compile(LPCTSTR texbasename);
+int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
+
+//////////
+/// Constants 
 
 // console colors used
 #define fgMsg			JadedHoboConsole::fg_green
@@ -43,7 +54,6 @@ using namespace std;
 #define fgIgnoredfile	JadedHoboConsole::fg_gray
 #define fgNormal		JadedHoboConsole::fg_lowhite
 #define fgDepFile		JadedHoboConsole::fg_cyan
-
 
 #define PREAMBLE_BASENAME       "preamble"
 #define PREAMBLE_FILENAME       PREAMBLE_BASENAME ".tex"
@@ -58,17 +68,14 @@ using namespace std;
 // constants determining which kind of recompilation is required 
 enum MAKETYPE { Unecessary = 0 , Partial = 1, Full =2} ;
 
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
-DWORD launch(LPCTSTR cmdline);
-bool fullcompile(LPCTSTR texbasename);
-bool compile(LPCTSTR texbasename);
-int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
+//////////
+/// Global variables
 
 // critical section for handling printf across the different threads
 CRITICAL_SECTION cs;
 
-// is the preamble present?
-bool preamble_present = true;
+// is the preamble stored in the external file PREAMBLE_FILENAME ?
+bool UseExternalPreamble = true;
 
 // handle du "make" thread
 HANDLE hMakeThread = NULL;
@@ -79,6 +86,9 @@ HANDLE hEvtAbortMake = NULL;
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
 
+// String append to the end of the command box title
+string title_suffix = "- " APP_NAME;
+
 
 // type of the parameter passed to the "make" thread
 typedef struct {
@@ -88,7 +98,7 @@ typedef struct {
 
 
 // define the ID values to indentify the option
-enum { OPT_HELP, OPT_INI };
+enum { OPT_HELP, OPT_INI, OPT_NOWATCH, OPT_COMPILE, OPT_FULLCOMPILE, OPT_NOEXTPREAMBLE };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
 // for details of each entry in this structure. In summary they are:
@@ -106,21 +116,46 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_HELP, _T("-help"), SO_NONE    },
     { OPT_INI,  _T("-ini"), SO_REQ_SEP  },
     { OPT_INI,  _T("--ini"), SO_REQ_SEP },
+    { OPT_NOWATCH,  _T("-nowatch"), SO_NONE  },
+    { OPT_NOWATCH,  _T("--nowatch"), SO_NONE  },
+    { OPT_COMPILE,  _T("-forcecompile"), SO_NONE  },
+    { OPT_COMPILE,  _T("--forcecompile"), SO_NONE },
+    { OPT_FULLCOMPILE,  _T("-forcefullcompile"), SO_NONE  },
+    { OPT_FULLCOMPILE,  _T("--forcefullcompile"), SO_NONE },
+    { OPT_NOEXTPREAMBLE,  _T("-noextpreamble"), SO_NONE  },
+    { OPT_NOEXTPREAMBLE,  _T("--noextpreamble"), SO_NONE },
     SO_END_OF_OPTIONS                   // END
 };
+
+
+////////////////////
 
 
 
 // show the usage of this program
 void ShowUsage(int argc, TCHAR *argv[]) {
-	cout << "Usage: latexdaemon [--help] [--ini inifile] MAINTEXFILE DEPENDENCYFILES\n\n";
-	cout << "Instructions:" << endl;;
-	cout << "  1 Move the preamble from your .tex file to a new file named preamble.tex." << endl << endl;;
-	cout << "  2 Insert the following line at the beginning of your .tex file:" << endl;;
-	cout << "      \\ifx\\incrcompilation\\undefined \\input preamble.tex \\fi" << endl << endl ;;
-	cout << "  3 Launch the daemon with the command \"" << argv[0] << " main.tex *.tex\"\n" << 
-		    "    (or \"" << argv[0] << " -ini pdflatex main.tex *.tex\" if you want to use pdflatex\n"<<
-			"    instead of latex) where main.tex is the main file of your latex project. "  << endl;;
+	cout << "USAGE: latexdaemon [options] MAINFILE.TEX DEPENDENCYFILES" <<endl
+		 << "where options can be:" << endl
+		 << " --help" << endl 
+		 << "   Show this help message." <<endl<<endl
+		 << " --initialize inifile" << endl 
+		 << "   Set the initialization format file used to compile the preamble to inifile." <<endl<<endl
+		 << " --forcecompile" << endl
+		 << "   Force the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
+		 << " --forcefullcompile" << endl
+		 << "   Force the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
+	     << " --nowatch" << endl 
+		 << "   Launch the compilation if necessary and then exit without watching for file changes."<<endl<<endl
+	     << " --noextpreamble" << endl 
+		 << "   Specify that the main .tex file does not use an external preamble file. This option is set by default if the file preamble.tex does not exist in the same directory as the main file. "
+		 << "You *must* set this option if preamble.tex exists but is not included with \\input{preamble.tex} at the beginning of your .tex file." <<endl
+		 << "   Important note: the current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically desactivated."<<endl<<endl
+	     << "INSTRUCTIONS:" << endl
+	     << "  1. Move the preamble from your .tex file to a new file named preamble.tex" << endl 
+	     << "  and insert '\\input{preamble.tex}' at the beginning of your .tex file," << endl << endl
+	     << "  2. start the daemon with the command \"latexdaemon MAINFILE.TEX *.tex\" " << 
+		    "(or \"latexdaemon -ini pdflatex MAINFILE.TEX *.tex\" if you want to use pdflatex"<<
+			"instead of latex) where main.tex is the main file of your latex project. "  << endl;
 }
 
 // perform the necessary compilation
@@ -129,14 +164,14 @@ void make(MAKETYPE maketype, LPCSTR mainfilebasename)
 	if( maketype != Unecessary ) {
 		bool bCompOk = true;
 		if( maketype == Partial ) {
-			SetConsoleTitle("recompiling... - LatexDaemon");
+			SetConsoleTitle(("recompiling..." + title_suffix).c_str());
 			bCompOk = compile(mainfilebasename);
 		}
 		else if ( maketype == Full ) {
-			SetConsoleTitle("recompiling... - LatexDaemon");
+			SetConsoleTitle(("recompiling..." + title_suffix).c_str());
 			bCompOk = fullcompile(mainfilebasename);
 		}
-		SetConsoleTitle(bCompOk ? "monitoring - LatexDaemon" : "(errors) monitoring - LatexDaemon");
+		SetConsoleTitle(((bCompOk ? "monitoring" : "(errors) monitoring") + title_suffix).c_str());
 	}
 }
 
@@ -162,7 +197,7 @@ int _tmain(int argc, TCHAR *argv[])
 	// create the event used to abort the "make" thread
 	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
 
-	cout << "LatexDaemon " << VERSION << " by William Blum, December 2006" << endl << endl;;
+	cout << APP_NAME << " " << VERSION << " by William Blum, December 2006" << endl << endl;;
 
     unsigned int uiFlags = 0;
 
@@ -170,6 +205,9 @@ int _tmain(int argc, TCHAR *argv[])
 		ShowUsage(argc,argv);
 		return 1;
 	}
+
+	// default options, can be overwritten by command line parameters
+	bool ForceFullCompile = false, ForceCompile = false, Watch = true;
 
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
@@ -198,15 +236,32 @@ int _tmain(int argc, TCHAR *argv[])
             continue;
         }
 
-        if (args.OptionId() == OPT_HELP) {
+		switch( args.OptionId() ) {
+		case OPT_HELP:
             ShowUsage(argc,argv);
             return 0;
-        }
-        if (args.OptionId() == OPT_INI) {
+		case OPT_INI:
 			texinifile = args.OptionArg();
-			cout << "Intiatialization file set to \"" << texinifile << "\"" << endl;;			
+			cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
+			break;
+		case OPT_NOWATCH:
+			Watch = false;
+			break;
+		case OPT_COMPILE:
+			cout << "-Initial compilation required." << endl;;
+			ForceCompile = true;
+			break;
+		case OPT_FULLCOMPILE:
+			cout << "-Initial full compilation required." << endl;;
+			ForceFullCompile = true;
+			break;
+		case OPT_NOEXTPREAMBLE:
+			cout << "-No external preamble." << endl;;
+			UseExternalPreamble = false;
+			break;
+		default:
+			break;
         }
-
 
         uiFlags |= (unsigned int) args.OptionId();
     }
@@ -221,7 +276,11 @@ int _tmain(int argc, TCHAR *argv[])
         return 1;
     }
 
-    cout << "Main file: '" << glob.File(0) << "'\n";
+	// set console title
+	title_suffix = "- " APP_NAME "["+ texinifile +"]";
+	SetConsoleTitle(("Initialization " + title_suffix).c_str());
+
+	cout << "-Main file: '" << glob.File(0) << "'\n";
 
 	TCHAR drive[4];
 	TCHAR dir[_MAX_DIR];
@@ -231,16 +290,20 @@ int _tmain(int argc, TCHAR *argv[])
 
 	_fullpath( fullpath, glob.File(0), _MAX_PATH );
 	_tsplitpath(fullpath, drive, dir, mainfile, ext);
-	cout << "Directory: " << dir << "\n";
+	cout << "-Directory: " << dir << "\n";
 
 	if(  _tcsncmp(ext, ".tex", 4) )	{
 		cerr << fgErr << "Error: the file has not the .tex extension!\n\n";
 		return 1;
 	}
-
-	cout << "Dependencies:\n";
-    for (int n = 1; n < glob.FileCount(); ++n)
-		_tprintf(_T("  %2d: '%s'\n"), n, glob.File(n));
+	if( glob.FileCount()>1 ) {
+		cout << "-Dependencies:\n";
+		for (int n = 1; n < glob.FileCount(); ++n)
+			_tprintf(_T("  %2d: '%s'\n"), n, glob.File(n));
+	}
+	else
+		cout << "-No dependency.\n";
+		
 
 	if(glob.FileCount() == 0)
 		return 1;
@@ -251,52 +314,65 @@ int _tmain(int argc, TCHAR *argv[])
 
 	// compare the timestamp of the preamble.tex file and the format file
 	int res = compare_timestamp(PREAMBLE_FILENAME, (string(PREAMBLE_BASENAME)+".fmt").c_str());
-	
-	preamble_present = !(res & ERR_SRCABSENT);
-	if ( !preamble_present ) {
-		cout << fgWarning << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
+
+	// check for the presence of the external preamble file
+	if( UseExternalPreamble ) {
+		UseExternalPreamble = !(res & ERR_SRCABSENT);
+		if ( !UseExternalPreamble ) {
+			cout << fgWarning << "Warning: Preamble file " << PREAMBLE_FILENAME << " not found. Precompilation mode desactivated!\n";
+		}
 	}
 
-	// The preamble file is present and the format file does not exist or has a timestamp
-	// older than the preamble file : then recreate the format file and recompile the .tex file.
-	if( preamble_present &&  (res == SRC_FRESHER || (res & ERR_OUTABSENT)) ) {
-		if( res == SRC_FRESHER ) {
-			 cout << fgMsg << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
-			 cout << fgMsg << "  Let's recreate the format file and recompile " << mainfile << ".tex.\n";
-		}
-		else {		
-			cout << fgMsg << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
-		}
+	if( ForceFullCompile ) {
 		make(Full, mainfile);
 	}
-	
-	// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
-	else {
-		// check if the main file has been modified since the creation of the dvi file
-		int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
-
-		// check if a dependency file has been modified since the creation of the dvi file
-		bool dependency_fresher = false;
-		for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
-			dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+".dvi").c_str()) ;
-
-		if ( maintex_comp & ERR_SRCABSENT ) {
-			cout << fgErr << "File " << mainfile << ".tex not found!\n";
-			return 2;
-		}
-		else if ( maintex_comp & ERR_OUTABSENT ) {
-			cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
-			make(Partial, mainfile);
-		}
-		else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
-			cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
-			make(Partial, mainfile);
-		}
-		// else 
-		//   We have maintex_comp == OUT_FRESHER and dependency_fresher =false therfore no need to recompile.
+	else if ( ForceCompile ) {
+		make(Partial, mainfile);
 	}
-	
-    WatchTexFiles(path.c_str(), mainfile, glob);
+	// Determine what needs to be recompiled based on the files that have been touched since last compilation.
+	else {
+		// The external preamble file is used and the format file does not exist or has a timestamp
+		// older than the preamble file : then recreate the format file and recompile the .tex file.
+		if( UseExternalPreamble && (res == SRC_FRESHER || (res & ERR_OUTABSENT)) ) {
+			if( res == SRC_FRESHER ) {
+				 cout << fgMsg << "+ " << PREAMBLE_FILENAME << " has been modified since last run.\n";
+				 cout << fgMsg << "  Let's recreate the format file and recompile " << mainfile << ".tex.\n";
+			}
+			else {		
+				cout << fgMsg << "+ " << PREAMBLE_BASENAME << ".fmt does not exists. Let's create it...\n";
+			}
+			make(Full, mainfile);
+		}
+		
+		// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
+		else {
+			// check if the main file has been modified since the creation of the dvi file
+			int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
+
+			// check if a dependency file has been modified since the creation of the dvi file
+			bool dependency_fresher = false;
+			for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
+				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+".dvi").c_str()) ;
+
+			if ( maintex_comp & ERR_SRCABSENT ) {
+				cout << fgErr << "File " << mainfile << ".tex not found!\n";
+				return 2;
+			}
+			else if ( maintex_comp & ERR_OUTABSENT ) {
+				cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
+				make(Partial, mainfile);
+			}
+			else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
+				cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
+				make(Partial, mainfile);
+			}
+			// else 
+			//   We have maintex_comp == OUT_FRESHER and dependency_fresher =false therfore no need to recompile.
+		}
+	}
+
+	if( Watch )
+		WatchTexFiles(path.c_str(), mainfile, glob);
 
 	CloseHandle(hEvtAbortMake);
 	return 0;
@@ -402,9 +478,18 @@ bool compile(LPCTSTR texbasename)
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
 
-	// preamble present? Then compile using the precompiled preamble.
-	if(  preamble_present ) {
-		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
+	// External preamble used? Then compile using the precompiled preamble.
+	if( UseExternalPreamble ) {
+		// Remark on the latex code included in the following command line:
+		//	 % Install a hook for the \input command ...
+		///  \let\TEXDAEMONinput\input
+		//   % which ignores the first file inclusion (the one inserting the preamble)
+		//   \def\input#1{\let\input\TEXDAEMONinput}
+		string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\let\\TEXDAEMONinput\\input\\def\\input#1{\\let\\input\\TEXDAEMONinput} \\TEXDAEMONinput "+texbasename+".tex \"";
+		
+		//// Old version requiring the user to insert a conditional at the start of the main .tex file
+		//string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+PREAMBLE_BASENAME+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
+		
 		cout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
 	    LeaveCriticalSection( &cs ); 
 		return 0==launch(cmdline.c_str());
@@ -438,7 +523,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 
 	// get the digest of the preamble file
 	md5 dg_preamble;
-	if( preamble_present && !dg_preamble.DigestFile(PREAMBLE_FILENAME) ) {
+	if( UseExternalPreamble && !dg_preamble.DigestFile(PREAMBLE_FILENAME) ) {
 		cerr << "File " << PREAMBLE_FILENAME << " cannot be found or opened!\n" << fgLatex;
 		return;
 	}
@@ -454,8 +539,8 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		NULL /* file with attributes to copy */
 	  );
 
-    cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n";
-	SetConsoleTitle("monitoring - LatexDaemon");
+    cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n" << fgNormal;
+	SetConsoleTitle(("monitoring" + title_suffix).c_str());
 	
 	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
 
@@ -511,7 +596,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 				}
 				
 				// modification of the preamble file?
-				else if( preamble_present && !_tcscmp(filename,PREAMBLE_FILENAME)  ) {
+				else if( UseExternalPreamble && !_tcscmp(filename,PREAMBLE_FILENAME)  ) {
 					if( dg_new.DigestFile(PREAMBLE_FILENAME) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
 						if(!hMakeThread) cout << fgDepFile << "+ \"" << PREAMBLE_FILENAME << "\" changed (preamble file).\n";

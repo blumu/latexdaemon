@@ -1,7 +1,29 @@
+<p class="date"> 26 feb 2007 - Version 0.9 </p>
+<ul>
+	<li>
+		It is now easier to prepare the .tex files to work with the daemon: it suffices to add the command \input{preamble.tex} at the beginning
+		of the main .tex file and to move all the code that needs to be precompiled to preamble.tex.
+	</li>
+	<li>new option "-noextpreamble":
+		specifies that the main .tex file does not use an external preamble file. This
+		option is set by default if the file preamble.tex does not exist in the same directory as the main file.
+		You <b>must</b> set this option if preamble.tex exists but
+		is not included with \input{preamble.tex} at the beginning of your .tex file.
+		<i>Important note</i>: the current version is not capable of extracting the preamble from the .tex file, therefore
+		if this switch is used, the precompilation feature will be automatically desactivated.
+	</li>
+</ul>
+<p class="date"> 25 feb 2007 - Version 0.8 </p>
+<ul>
+	<li>new option "-nowatch" for launching the compilation just once (if necessary) and wihtout watching for file
+		changes.</li>
+	<li>new option "-forcecompile" to force an initial compilation of the .tex file even when no change is detected.</li>
+	<li>new option "-forcefullcompile" to force an initial full compilation (preamble and .tex file).</li>
+</ul>
 <p class="date"> 24 feb 2007 - Version 0.7 </p>
 <ul>
 	<li>new option "-ini" to specify which initialization file to use when compiling the preamble. This
-  can be use to compile a document with pdflatex instead of latex (using the parameter "-ini pdflatex")
+  can be use to compile a document with pdflatex instead of latex (using the parameter "-ini pdflatex").
   </li>
 </ul>
 
@@ -24,10 +46,10 @@ ensure that the file content is not modified while computing the digest.</li>
         <li>Change: compute the MD5 digest instead of the CRC. </li>
         <li>New: it is now possible to specify additional dependency files at the command line using globling (for instance *.tex)
                   The first file being the main tex file. </li>
-        <li>New: console colors to distinguish Latex output from Latexdaemon output. </li>
+        <li>New: console colors to distinguish Latex output from the daemon output. </li>
 </ul>
 
 <p class="date"> 29 September 2006 - Version 0.3</p>
-
-<p class="date"> September 2006 - Version 0.1</p> 
-	First version released.
+<ul>	
+	<li>First version released.</li>
+</ul>
