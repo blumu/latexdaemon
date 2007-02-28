@@ -1,37 +1,48 @@
+<p class="date"> 28 feb 2007 - Version 0.91 </p>
+<ul>
+        <li> When looking for the preamble file, it first searches for a file with the same base name as the tex file but with the .pre extension, if it does not exists it then looks for preamble.tex. This allows to have several main latex files in the same directory each of them having its own preamble file. 
+        </li>
+        <li>  change: option "-noextpreamble" now becomes "-preamble={none|external}:
+        <ul>
+                <li>Set to 'none', it specifies that the main .tex file does not use an external preamble file. The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used the precompilation feature will be automatically desactivated.</li>
+                <li> Set to 'external' (default), it specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exists it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option.   If these files exist but do not correspond to the preamble of your latex document (i.e. not included with \input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong  preamble. </li>
+        </ul>
+        </li>
+</ul>
 <p class="date"> 26 feb 2007 - Version 0.9 </p>
 <ul>
-	<li>
-		It is now easier to prepare the .tex files to work with the daemon: it suffices to add the command \input{preamble.tex} at the beginning
-		of the main .tex file and to move all the code that needs to be precompiled to preamble.tex.
-	</li>
-	<li>new option "-noextpreamble":
-		specifies that the main .tex file does not use an external preamble file. This
-		option is set by default if the file preamble.tex does not exist in the same directory as the main file.
-		You <b>must</b> set this option if preamble.tex exists but
-		is not included with \input{preamble.tex} at the beginning of your .tex file.
-		<i>Important note</i>: the current version is not capable of extracting the preamble from the .tex file, therefore
-		if this switch is used, the precompilation feature will be automatically desactivated.
-	</li>
+        <li>
+                It is now easier to prepare the .tex files to work with the daemon: it suffices to add the command \input{preamble.tex} at the beginning
+                of the main .tex file and to move all the code that needs to be precompiled to preamble.tex.
+        </li>
+        <li>new option "-noextpreamble":
+                specifies that the main .tex file does not use an external preamble file. This
+                option is set by default if the file preamble.tex does not exist in the same directory as the main file.
+                You <b>must</b> set this option if preamble.tex exists but
+                is not included with \input{preamble.tex} at the beginning of your .tex file.
+                <i>Important note</i>: the current version is not capable of extracting the preamble from the .tex file, therefore
+                if this switch is used, the precompilation feature will be automatically desactivated.
+        </li>
 </ul>
 <p class="date"> 25 feb 2007 - Version 0.8 </p>
 <ul>
-	<li>new option "-nowatch" for launching the compilation just once (if necessary) and wihtout watching for file
-		changes.</li>
-	<li>new option "-forcecompile" to force an initial compilation of the .tex file even when no change is detected.</li>
-	<li>new option "-forcefullcompile" to force an initial full compilation (preamble and .tex file).</li>
+        <li>new option "-nowatch" for launching the compilation just once (if necessary) and wihtout watching for file
+                changes.</li>
+        <li>new option "-forcecompile" to force an initial compilation of the .tex file even when no change is detected.</li>
+        <li>new option "-forcefullcompile" to force an initial full compilation (preamble and .tex file).</li>
 </ul>
 <p class="date"> 24 feb 2007 - Version 0.7 </p>
 <ul>
-	<li>new option "-ini" to specify which initialization file to use when compiling the preamble. This
+        <li>new option "-ini" to specify which initialization file to use when compiling the preamble. This
   can be use to compile a document with pdflatex instead of latex (using the parameter "-ini pdflatex").
   </li>
 </ul>
 
 <p class="date"> 9 December 2006 - Version 0.6 </p>
 <ul>
-	<li>bug fixed: when computing the MD5, the file is opened with reading sharing access to
+        <li>bug fixed: when computing the MD5, the file is opened with reading sharing access to
 ensure that the file content is not modified while computing the digest.</li>
-	<li>bug fixed: no more crashe when runned without parameter.  </li>
+        <li>bug fixed: no more crashe when runned without parameter.  </li>
 </ul>
 
 <p class="date"> 8 December 2006 - Version 0.5 </p>
@@ -50,6 +61,6 @@ ensure that the file content is not modified while computing the digest.</li>
 </ul>
 
 <p class="date"> 29 September 2006 - Version 0.3</p>
-<ul>	
-	<li>First version released.</li>
+<ul>
+        <li>First version released.</li>
 </ul>

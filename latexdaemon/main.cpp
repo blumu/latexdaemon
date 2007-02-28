@@ -153,7 +153,7 @@ void ShowUsage(int argc, TCHAR *argv[]) {
 		 << "   Force the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
 	     << " --nowatch" << endl 
 		 << "   Launch the compilation if necessary and then exit without watching for file changes."<<endl<<endl
-		 << " --preamble=none|external" << endl 
+		 << " --preamble={none|external}" << endl 
 		 << "   Set to 'none', it specifies that the main .tex file does not use an external preamble file."<<endl
 		 << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used the precompilation feature will be automatically desactivated."<<endl
 		 << "   Set to 'external' (default), it specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exists it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
