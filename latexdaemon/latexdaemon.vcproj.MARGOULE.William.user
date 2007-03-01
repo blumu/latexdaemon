@@ -39,7 +39,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="d:\documents\dphil\latex\transfer\current\main.tex d:\documents\dphil\latex\transfer\current\*.tex"
+				CommandArguments="-preamble=none -forcefullcompile -ini pdflatex &quot;d:\documents\dphil\latex\pstring\pstring-example1.tex&quot;"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

@@ -2,7 +2,7 @@
 // Created in September 2006
 // Last modfification 01 Mar 2007
 #define APP_NAME		"LatexDaemon"
-#define VERSION			0.901
+#define VERSION			0.902
 
 // See changelog.html for the list of changes:.
 
@@ -345,6 +345,9 @@ int _tmain(int argc, TCHAR *argv[])
 		}
 	}
 
+	if( UseExternalPreamble )
+		cout << "-Preamble file: " << preamble_filename << "\n";
+
 	if( ForceFullCompile ) {
 		make(Full, mainfile);
 	}
@@ -480,17 +483,17 @@ DWORD launch(LPCTSTR cmdline)
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
 bool fullcompile(LPCTSTR texbasename)
 {
-	EnterCriticalSection( &cs );
-	string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&" + texinifile + "\" \"\\input ")+preamble_filename+" \\dump\\endinput \"";
-	cout << fgMsg << "-- Creation of the format file...\n";
-	cout << "[running '" << cmdline << "']\n" << fgLatex;
-    LeaveCriticalSection( &cs ); 
-	DWORD dw = launch(cmdline.c_str());
-
-	if( dw )
-		return false;
-	else
-		return compile(texbasename);
+	// Check that external preamble exists
+	if( UseExternalPreamble ) {
+		EnterCriticalSection( &cs );
+		string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&" + texinifile + "\" \"\\input ")+preamble_filename+" \\dump\\endinput \"";
+		cout << fgMsg << "-- Creation of the format file...\n";
+		cout << "[running '" << cmdline << "']\n" << fgLatex;
+		LeaveCriticalSection( &cs ); 
+		if( launch(cmdline.c_str()) )
+			return false;
+	}
+	return compile(texbasename);
 }
 
 
