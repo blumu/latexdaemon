@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="8.00"
@@ -202,6 +202,14 @@
 				>
 			</File>
 		</Filter>
+		<File
+			RelativePath=".\changelog-inc.html"
+			>
+		</File>
+		<File
+			RelativePath=".\changelog.html"
+			>
+		</File>
 	</Files>
 	<Globals>
 	</Globals>

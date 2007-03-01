@@ -1,6 +1,6 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
-// Last modfification 25 feb 2007
+// Last modfification 01 Mar 2007
 #define APP_NAME		"LatexDaemon"
 #define VERSION			0.901
 
