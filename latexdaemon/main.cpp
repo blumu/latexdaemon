@@ -83,6 +83,9 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 bool dvips(LPCTSTR texbasename);
 bool ps2pdf(LPCTSTR texbasename);
 bool bibtex(LPCTSTR texbasename);
+bool edit(LPCTSTR texbasename);
+bool view(LPCTSTR texbasename);
+bool openfolder(LPCTSTR texbasename);
 
 
 //////////
@@ -120,7 +123,8 @@ string preamble_filename = "";
 string preamble_basename = "";
 
 // Path where the main tex file resides
-TCHAR fullpath[_MAX_PATH];
+string texdir;
+string texfullpath;
 
 
 // by default the output extension is set to ".dvi", it must be changed to ".pdf" if pdflatex is used
@@ -139,7 +143,7 @@ enum {
 	OPT_USAGE, OPT_INI, OPT_NOWATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
 	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, 
-	OPT_PS2PDF
+	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER
 };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
@@ -193,6 +197,12 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
 	{ OPT_QUIT,			_T("-q"),			SO_NONE		},
 	{ OPT_QUIT,			_T("-quit"),		SO_NONE		},
+	{ OPT_EDIT,			_T("-e"),			SO_NONE		},
+	{ OPT_EDIT,			_T("-edit"),		SO_NONE		},
+	{ OPT_VIEWOUTPUT,	_T("-v"),			SO_NONE		},
+	{ OPT_VIEWOUTPUT,	_T("-view"),		SO_NONE		},
+	{ OPT_OPENFOLDER,	_T("-o"),			SO_NONE		},
+	{ OPT_OPENFOLDER,	_T("-open"),		SO_NONE		},
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -236,9 +246,54 @@ void ShowUsage(TCHAR *progname) {
 // update the title of the console
 void SetTitle(string state)
 {
-	SetConsoleTitle((state + " -  "+ texinifile + "Daemon - " + fullpath).c_str());
+	SetConsoleTitle((state + " -  "+ texinifile + "Daemon - " + texfullpath).c_str());
 }
 
+// Code executed when the -ini option is specified
+void ExecuteOptionIni( string optionarg )
+{
+	texinifile = optionarg;
+	cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
+	if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
+		output_ext = ".pdf";
+	else if ( (texinifile == "latex") || (texinifile == "tex") )
+		output_ext = ".dvi";
+}
+// Code executed when the -preamble option is specified
+void ExecuteOptionPreamble( string optionarg )
+{
+	UseExternalPreamble = (optionarg=="none") ? true : false ;
+	if( UseExternalPreamble )
+		cout << "-Use external preamble." << endl;
+	else
+		cout << "-No preamble." << endl;
+}
+
+// Code executed when the -force option is specified
+void ExecuteOptionForce( string optionarg, JOB &force )
+{
+	if( optionarg=="fullcompile" ) {
+		force = FullCompile;
+		cout << "-Initial full compilation forced." << endl;
+	}
+	else {
+		force = Compile;
+		cout << "-Initial compilation forced." << endl;
+	}
+}
+
+// Code executed when the -afterjob option is specified
+void ExecuteOptionAfterJob( string optionarg )
+{
+	if( optionarg=="dvips" ) {
+		afterjob = Dvips;
+		cout << "-After-compilation job set to '" << optionarg << "'" << endl;
+	}
+	else {
+		afterjob = Rest;
+		cout << "-After-compilation job set to 'rest'" << endl;
+	}
+}
 
 // perform the necessary compilation
 void make(JOB makejob, LPCSTR mainfilebasename)
@@ -359,60 +414,33 @@ void WINAPI CommandPromptThread( void *param )
 		case OPT_HELP:
 			EnterCriticalSection( &cs );
 			cout << fgCommandLine << "The following commands are available:" << endl
-				 << "  h[elp] to show this message" << endl
-				 << "  u[sage] to show the help on command line parameters usage" << endl
-				 << "  f[ullcompile] to compile the preamble and the .tex file" << endl
+				 << "  b[ibtex] to run bibtex on the .tex file" << endl
 				 << "  c[compile] to compile the .tex file using the precompiled preamble" << endl
 				 << "  d[vips] to convert the .dvi file to postscript" << endl
+				 << "  e[dit] to edit the .tex file" << endl
+				 << "  f[ullcompile] to compile the preamble and the .tex file" << endl
+				 << "  h[elp] to show this message" << endl
+				 << "  o[pen] to open the folder containing the .tex file" << endl
 				 << "  p[s2pdf] to convert the .ps file to pdf" << endl
-				 << "  b[ibtex] to run bibtex on the .tex file" << endl
-				 << "  q[uit] to quit the program" << endl << endl
-				 << "You can also configure some variables as follows:" << endl
-				 << "  ini=inifile   to set the initial format file to inifile" << endl
-				 << "  preamble={none,external}   to change the preamble mode" << endl
-				 << "  afterjob={rest,dvips}   to change the job executed after compilation of the .tex file" << endl << endl
+				 << "  q[uit] to quit the program" << endl 
+				 << "  u[sage] to show the help on command line parameters usage" << endl
+				 << "  v[iew] to view the output file (dvi or pdf depending on the ini file used)" << endl << endl
+				 << "You can also configure variables with:" << endl
+				 << "  ini=inifile   set the initial format file to inifile" << endl
+				 << "  preamble={none,external}   set the preamble mode" << endl
+				 << "  afterjob={rest,dvips}   set the job executed after compilation of the .tex file" << endl << endl
 				 << fgCommandLine << PROMPT_STRING;
 			LeaveCriticalSection( &cs ); 
 			break;
-		case OPT_INI:
-			texinifile = args.OptionArg();
-			cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
-			SetTitle("monitoring");
-			if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
-				output_ext = ".pdf";
-			printprompt=true;
-			break;
-		case OPT_PREAMBLE:
-			UseExternalPreamble = strcmp(args.OptionArg(),"none") ? true : false ;
-			if( UseExternalPreamble )
-				cout << "-Use external preamble." << endl;
-			else
-				cout << "-No preamble." << endl;
-			printprompt=true;
-			break;
-		case OPT_AFTERJOB:
-			if( strcmp(args.OptionArg(),"dvips")==0 ) {
-				afterjob = Dvips;
-				cout << "-After-compilation job set to '" << args.OptionArg() << "'" << endl;
-			}
-			else {
-				afterjob = Dvips;
-				cout << "-After-compilation job set to 'rest'" << endl;
-			}
-			printprompt=true;
-			break;
-		case OPT_BIBTEX:
-			bibtex(mainfilebasename);
-			printprompt=true;
-			break;
-		case OPT_DVIPS:
-			dvips(mainfilebasename);
-			printprompt=true;
-			break;
-		case OPT_PS2PDF:
-			ps2pdf(mainfilebasename);
-			printprompt=true;
-			break;
+		case OPT_INI:		ExecuteOptionIni(args.OptionArg());			printprompt=true;	break;
+		case OPT_PREAMBLE:	ExecuteOptionPreamble(args.OptionArg());	printprompt=true;	break;
+		case OPT_AFTERJOB:	ExecuteOptionAfterJob(args.OptionArg());	printprompt=true;	break;
+		case OPT_BIBTEX:		bibtex(mainfilebasename);		printprompt=true;	break;
+		case OPT_DVIPS:			dvips(mainfilebasename);		printprompt=true;	break;
+		case OPT_PS2PDF:		ps2pdf(mainfilebasename);		printprompt=true;	break;
+		case OPT_EDIT:			edit(mainfilebasename);			printprompt=true;	break;
+		case OPT_VIEWOUTPUT:	view(mainfilebasename);			printprompt=true;	break;
+		case OPT_OPENFOLDER:	openfolder(mainfilebasename);	printprompt=true;	break;
 		case OPT_COMPILE:
 			RestartMakeThread(Compile, mainfilebasename);
 			// wait for the "make" thread to end
@@ -426,7 +454,7 @@ void WINAPI CommandPromptThread( void *param )
 		case OPT_QUIT:
 			wantsmore = false;
 			cout << fgNormal;
-			break;
+			break;		
 
 		default:
 			EnterCriticalSection( &cs );
@@ -493,49 +521,17 @@ int _tmain(int argc, TCHAR *argv[])
         }
 
 		switch( args.OptionId() ) {
-		case OPT_USAGE:
-            ShowUsage(NULL);
-            return 0;
-		case OPT_INI:
-			texinifile = args.OptionArg();
-			cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
-			if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
-				output_ext = ".pdf";
-			break;
-		case OPT_NOWATCH:
-			Watch = false;
-			break;
-		case OPT_FORCE:
-			if( strcmp(args.OptionArg(),"fullcompile")==0 ) {
-				force = FullCompile;
-				cout << "-Initial full compilation forced." << endl;
-			}
-			else {
-				force = Compile;
-				cout << "-Initial compilation forced." << endl;
-			}
-			break;
-		case OPT_PREAMBLE:
-			UseExternalPreamble = strcmp(args.OptionArg(),"none") ? true : false ;
-			if( UseExternalPreamble )
-				cout << "-Use external preamble." << endl;
-			else
-				cout << "-No preamble." << endl;
-			break;
-		case OPT_AFTERJOB:
-			if( strcmp(args.OptionArg(),"dvips")==0 )
-			{
-				afterjob = Dvips;
-				cout << "-After-compilation job set to " << args.OptionArg() << endl;
-			}
-			break;
-		default:
-			break;
-        }
-
+			case OPT_USAGE:         ShowUsage(NULL);							return 0;
+			case OPT_INI:			ExecuteOptionIni(args.OptionArg());			break;
+			case OPT_NOWATCH:		Watch = false;								break;
+			case OPT_FORCE:			ExecuteOptionForce(args.OptionArg(),force); break;
+			case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());	break;
+			case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());	break;
+			default:				break;
+		}
         uiFlags |= (unsigned int) args.OptionId();
     }
-
+	
     CSimpleGlob glob(uiFlags);
     if (SG_SUCCESS != glob.Add(args.FileCount(), args.Files()) ) {
         _tprintf(_T("Error while globbing files! Make sure the paths given as parameters are correct.\n"));
@@ -549,17 +545,22 @@ int _tmain(int argc, TCHAR *argv[])
 	cout << "-Main file: '" << glob.File(0) << "'\n";
 
 	TCHAR drive[4];
-	TCHAR dir[_MAX_DIR];
 	TCHAR mainfile[_MAX_FNAME];
 	TCHAR ext[_MAX_EXT];
+	TCHAR fullpath[_MAX_PATH];
+	TCHAR dir[_MAX_DIR];
 
 	_fullpath( fullpath, glob.File(0), _MAX_PATH );
 	_tsplitpath( fullpath, drive, dir, mainfile, ext );
 
+	// set the global variables
+	texfullpath = fullpath;
+	texdir = string(drive) + dir;
+
 	// set console title
 	SetTitle("Initialization");
 
-	cout << "-Directory: " << dir << "\n";
+	cout << "-Directory: " << drive << dir << "\n";
 
 	if(  _tcsncmp(ext, ".tex", 4) )	{
 		cerr << fgErr << "Error: the file has not the .tex extension!\n\n";
@@ -813,6 +814,49 @@ bool ps2pdf(LPCTSTR texbasename)
     LeaveCriticalSection( &cs ); 
 	return 0==launch(cmdline.c_str());
 }
+
+// Edit the .tex file
+bool edit(LPCTSTR texbasename)
+{
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
+    LeaveCriticalSection( &cs ); 
+	HINSTANCE ret = ShellExecute(NULL, _T("open"),
+		_T(texfullpath.c_str()),
+		NULL,
+		texdir.c_str(),
+		SW_SHOWNORMAL);
+	return (int)ret>32;
+}
+
+// View the output file
+bool view(LPCTSTR texbasename)
+{
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- view " << texbasename << output_ext << "...\n";
+    LeaveCriticalSection( &cs ); 
+	HINSTANCE ret = ShellExecute(NULL, _T("open"),
+		_T((texdir+texbasename+output_ext).c_str()),
+		NULL,
+		texdir.c_str(),
+		SW_SHOWNORMAL);
+	return (int)ret>32;
+}
+
+// Open the folder containing the .tex file
+bool openfolder(LPCTSTR texbasename)
+{
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- open directory " << texdir << " ...\n";
+    LeaveCriticalSection( &cs ); 
+	HINSTANCE ret = ShellExecute(NULL, NULL,
+		_T(texdir.c_str()),
+		NULL,
+		NULL,
+		SW_SHOWNORMAL);
+	return (int)ret>32;
+}
+
 
 // Convert the dvi file to postscript using dvips
 bool dvips(LPCTSTR texbasename)
