@@ -1,7 +1,7 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
-// Last modfification 02 Mar 2007
 #define APP_NAME		"LatexDaemon"
+#define VERSION_DATE	"2 March 2007"
 #define VERSION			0.903
 
 // See changelog.html for the list of changes:.
@@ -168,7 +168,7 @@ void ShowUsage(int argc, TCHAR *argv[]) {
 		 << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used the precompilation feature will be automatically desactivated."<<endl
 		 << "   Set to 'external' (default), it specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exists it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
 		 << "   If these files exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
-		 << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex ..\\*.tex'." <<endl<<endl
+		 << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
 	     << "INSTRUCTIONS:" << endl
 	     << "  1. Move the preamble from your .tex file to a new file named mainfile.pre" << endl 
 	     << "  and insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file," << endl << endl
@@ -275,7 +275,7 @@ int _tmain(int argc, TCHAR *argv[])
 	// create the event used to quit the program
 	hEvtQuitProgram = CreateEvent(NULL,TRUE,FALSE,NULL);
 
-	cout << APP_NAME << " " << VERSION << " by William Blum, December 2006" << endl << endl;;
+	cout << APP_NAME << " " << VERSION << " by William Blum, " VERSION_DATE << endl << endl;;
 
     unsigned int uiFlags = 0;
 
