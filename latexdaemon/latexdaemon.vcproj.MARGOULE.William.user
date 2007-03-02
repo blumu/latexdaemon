@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-lsdf"
+				CommandArguments="&quot;d:\documents\dphil\latex\safetynotes\compos.tex&quot;"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"
@@ -39,7 +39,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-preamble=none -forcefullcompile -ini pdflatex &quot;d:\documents\dphil\latex\pstring\pstring-example1.tex&quot;"
+				CommandArguments="-preamble=none -forcefullcompile -ini pdflatex &quot;d:\documents\dphil\latex\safetynotes\compos.tex&quot;"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

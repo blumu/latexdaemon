@@ -1,8 +1,8 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
-// Last modfification 01 Mar 2007
+// Last modfification 02 Mar 2007
 #define APP_NAME		"LatexDaemon"
-#define VERSION			0.902
+#define VERSION			0.903
 
 // See changelog.html for the list of changes:.
 
@@ -35,13 +35,6 @@
 #include "SimpleGlob.h"
 using namespace std;
 
-//////////
-/// Prototypes
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
-DWORD launch(LPCTSTR cmdline);
-bool fullcompile(LPCTSTR texbasename);
-bool compile(LPCTSTR texbasename);
-int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 
 //////////
 /// Constants 
@@ -54,6 +47,7 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 #define fgIgnoredfile	JadedHoboConsole::fg_gray
 #define fgNormal		JadedHoboConsole::fg_lowhite
 #define fgDepFile		JadedHoboConsole::fg_cyan
+#define fgCommandLine	JadedHoboConsole::fg_magenta
 
 #define DEFAULTPREAMBLE2_BASENAME       "preamble"
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME ".tex"
@@ -69,6 +63,17 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 
 // constants determining which kind of recompilation is required 
 enum MAKETYPE { Unecessary = 0 , Partial = 1, Full =2} ;
+
+
+//////////
+/// Prototypes
+void RestartMakeThread( MAKETYPE maketype, LPCTSTR mainfilebase);
+void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
+DWORD launch(LPCTSTR cmdline);
+bool fullcompile(LPCTSTR texbasename);
+bool compile(LPCTSTR texbasename);
+int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
+
 
 //////////
 /// Global variables
@@ -89,12 +94,17 @@ HANDLE hMakeThread = NULL;
 // Event fired when the make thread needs to be aborted
 HANDLE hEvtAbortMake = NULL;
 
+// Event fired when the user wants to quit the program
+HANDLE hEvtQuitProgram = NULL;
+
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
 
 // String append to the end of the command box title
 string title_suffix = "- " APP_NAME;
 
+// by default the output extension is set to ".dvi", it must be changed to ".pdf" if pdflatex is used
+string output_ext = ".dvi";
 
 // type of the parameter passed to the "make" thread
 typedef struct {
@@ -184,6 +194,7 @@ void make(MAKETYPE maketype, LPCSTR mainfilebasename)
 	}
 }
 
+// thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
 {
 	ResetEvent(hEvtAbortMake);
@@ -198,6 +209,62 @@ void WINAPI MakeThread( void *param )
 	hMakeThread = NULL;
 }
 
+// thread responsible for parsing the commands send by the user.
+void WINAPI CommandThread( void *param )
+{
+	//////////////
+	// perform the necessary compilations
+	MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
+
+	//////////////
+	// input loop
+	bool wantsmore = true;
+	while(wantsmore)
+	{
+		string cmdline;
+		if(hMakeThread) {
+			// wait for the "make" thread to end
+			WaitForSingleObject(hMakeThread, INFINITE);
+		}
+
+		EnterCriticalSection( &cs );
+		cout << flush << fgCommandLine << "dameon>";
+		LeaveCriticalSection( &cs ); 
+		cin >> cmdline;
+
+		if( (cmdline == "h") || (cmdline == "help") || (cmdline == "?") ) {
+		EnterCriticalSection( &cs );
+			cout << fgCommandLine << "The following commands are available:" << endl;
+			cout << "  h[elp] to show this message" << endl;
+			cout << "  f[ullcompile] for full compilation" << endl;
+			cout << "  c[compile] for compilation" << endl;
+			cout << "  q[uit] to quit the program" << endl << endl;
+		LeaveCriticalSection( &cs ); 
+		}
+		else if( (cmdline == "c") || (cmdline == "compile") ) {
+			RestartMakeThread(Partial, p->mainfilebasename);
+			// wait for the "make" thread to end
+			WaitForSingleObject(hMakeThread, INFINITE);
+		}
+		else if( (cmdline == "f") || (cmdline == "fullcompile") ) {
+			RestartMakeThread(Full, p->mainfilebasename);
+			// wait for the "make" thread to end
+			WaitForSingleObject(hMakeThread, INFINITE);
+		}
+		else if( (cmdline == "q") || (cmdline == "quit") ) {
+			wantsmore = false;
+		}
+		else {
+		EnterCriticalSection( &cs );
+			cout << fgErr << "unknown command, type help to see the list commands available." <<endl;
+		LeaveCriticalSection( &cs ); 
+		}
+	}
+
+	free(p);
+	// raise the event saying that the user wants to quit
+	SetEvent(hEvtQuitProgram);
+}
 
 int _tmain(int argc, TCHAR *argv[])
 {
@@ -205,6 +272,8 @@ int _tmain(int argc, TCHAR *argv[])
 
 	// create the event used to abort the "make" thread
 	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
+	// create the event used to quit the program
+	hEvtQuitProgram = CreateEvent(NULL,TRUE,FALSE,NULL);
 
 	cout << APP_NAME << " " << VERSION << " by William Blum, December 2006" << endl << endl;;
 
@@ -252,6 +321,8 @@ int _tmain(int argc, TCHAR *argv[])
 		case OPT_INI:
 			texinifile = args.OptionArg();
 			cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
+			if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
+				output_ext = ".pdf";
 			break;
 		case OPT_NOWATCH:
 			Watch = false;
@@ -372,19 +443,19 @@ int _tmain(int argc, TCHAR *argv[])
 		// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
 		else {
 			// check if the main file has been modified since the creation of the dvi file
-			int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+".dvi").c_str());
+			int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+output_ext).c_str());
 
 			// check if a dependency file has been modified since the creation of the dvi file
 			bool dependency_fresher = false;
 			for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
-				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+".dvi").c_str()) ;
+				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+output_ext).c_str()) ;
 
 			if ( maintex_comp & ERR_SRCABSENT ) {
 				cout << fgErr << "File " << mainfile << ".tex not found!\n";
 				return 2;
 			}
 			else if ( maintex_comp & ERR_OUTABSENT ) {
-				cout << fgMsg << "+ " << mainfile << ".dvi does not exists. Let's create it...\n";
+				cout << fgMsg << "+ " << mainfile << output_ext << " does not exists. Let's create it...\n";
 				make(Partial, mainfile);
 			}
 			else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
@@ -396,10 +467,25 @@ int _tmain(int argc, TCHAR *argv[])
 		}
 	}
 
-	if( Watch )
+	if( Watch ) {
+	    cout << fgMsg << "-- Watching directory " << path.c_str() << " for changes...\n" << fgNormal;
+		SetConsoleTitle(("monitoring" + title_suffix).c_str());
+		// Start the command shell thread
+		MAKETHREADPARAM *p = new MAKETHREADPARAM;
+		HANDLE hCommandThread;
+		p->mainfilebasename = mainfile;
+		DWORD commandthreadID;
+		hCommandThread = CreateThread( NULL, 0,
+				(LPTHREAD_START_ROUTINE) CommandThread,
+				(LPVOID)p,
+				0,
+				&commandthreadID);
+
 		WatchTexFiles(path.c_str(), mainfile, glob);
+	}
 
 	CloseHandle(hEvtAbortMake);
+	CloseHandle(hEvtQuitProgram);
 	return 0;
 }
 
@@ -435,6 +521,8 @@ DWORD launch(LPCTSTR cmdline)
 	//si.dwFlags = STARTF_USESHOWWINDOW;
 	ZeroMemory( &pi, sizeof(pi) );
 
+	EnterCriticalSection( &cs );
+	
 	// Start the child process. 
 	if( !CreateProcess( NULL,   // No module name (use command line)
 		szCmdline,      // Command line
@@ -448,9 +536,7 @@ DWORD launch(LPCTSTR cmdline)
 		&si,            // Pointer to STARTUPINFO structure
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
-		EnterCriticalSection( &cs );
 		cout << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n";
-        LeaveCriticalSection( &cs ); 
 		return -1;
 	}
 	free(szCmdline);
@@ -475,6 +561,8 @@ DWORD launch(LPCTSTR cmdline)
 	// Close process and thread handles. 
 	CloseHandle( pi.hProcess );
 	CloseHandle( pi.hThread );
+
+    LeaveCriticalSection( &cs ); 
 
 	return dwRet;
 }
@@ -529,6 +617,34 @@ bool compile(LPCTSTR texbasename)
 }
 
 
+// Restart the make thread
+void RestartMakeThread( MAKETYPE maketype, LPCTSTR mainfilebase) {
+	if( maketype == Unecessary )
+		return;
+
+	/// abort the current "make" thread if it is already started
+	if( hMakeThread ) {
+		SetEvent(hEvtAbortMake);
+		// wait for the "make" thread to end
+		WaitForSingleObject(hMakeThread, INFINITE);
+	}			
+
+	// Create a new "make" thread.
+	//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
+	//  otherwise, if we pass the address of a locally defined variable as a parameter to 
+	//  CreateThread, the content of the structure may change
+	//  by the time the make thread is created (since the current thread runs concurrently).
+	MAKETHREADPARAM *p = new MAKETHREADPARAM;
+	p->maketype = maketype;
+	p->mainfilebasename = mainfilebase;
+	DWORD makethreadID;
+	hMakeThread = CreateThread( NULL,
+			0,
+			(LPTHREAD_START_ROUTINE) MakeThread,
+			(LPVOID)p,
+			0,
+			&makethreadID);
+}
 
 void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 {
@@ -546,12 +662,28 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 	string maintexfilename = string(mainfilebase) + ".tex";
 	md5 dg_tex = dg_deps[0];
 
+	// get the digest of the file containing bibtex bibliography references
+	string bblfilename = string(mainfilebase) + ".bbl";
+	md5 dg_bbl;
+	dg_bbl.DigestFile(bblfilename.c_str());
+	
 	// get the digest of the preamble file
 	md5 dg_preamble;
 	if( UseExternalPreamble && !dg_preamble.DigestFile(preamble_filename.c_str()) ) {
 		cerr << "File " << preamble_filename << " cannot be found or opened!\n" << fgLatex;
 		return;
 	}
+
+	//// open the directory to be monitored
+	//HANDLE hDir = CreateFile(
+	//	texpath, /* pointer to the directory containing the tex files */
+	//	FILE_LIST_DIRECTORY,                /* access (read-write) mode */
+	//	FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
+	//	NULL, /* security descriptor */
+	//	OPEN_EXISTING, /* how to create */
+	//	FILE_FLAG_BACKUP_SEMANTICS  , //| FILE_FLAG_OVERLAPPED, /* file attributes */
+	//	NULL /* file with attributes to copy */
+	//  );
 
 	// open the directory to be monitored
 	HANDLE hDir = CreateFile(
@@ -560,13 +692,11 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
 		NULL, /* security descriptor */
 		OPEN_EXISTING, /* how to create */
-		FILE_FLAG_BACKUP_SEMANTICS  , //| FILE_FLAG_OVERLAPPED, /* file attributes */
+		FILE_FLAG_BACKUP_SEMANTICS  | FILE_FLAG_OVERLAPPED , /* file attributes */
 		NULL /* file with attributes to copy */
 	  );
+	 
 
-    cout << fgMsg << "-- Watching directory " << texpath << " for changes...\n" << fgNormal;
-	SetConsoleTitle(("monitoring" + title_suffix).c_str());
-	
 	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
 
 	while( 1 )
@@ -575,6 +705,20 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		DWORD BytesReturned;
 
 		//GetOverlappedResult(hDir, &overlapped, &BytesReturned, TRUE);
+		//ReadDirectoryChangesW(
+		//	 hDir, /* handle to directory */
+		//	 &buffer, /* read results buffer */
+		//	 sizeof(buffer), /* length of buffer */
+		//	 FALSE, /* monitoring option */
+		//	 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
+		//	 FILE_NOTIFY_CHANGE_LAST_WRITE
+		//	 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
+		//	 , /* filter conditions */
+		//	 &BytesReturned, /* bytes returned */
+		//	 NULL, /* overlapped buffer */
+		//	 NULL); /* completion routine */
+		OVERLAPPED overl;
+		overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
 		ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
 			 &buffer, /* read results buffer */
@@ -585,14 +729,29 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 			 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
 			 , /* filter conditions */
 			 &BytesReturned, /* bytes returned */
-			 NULL, /* overlapped buffer */
+			 &overl, /* overlapped buffer */
 			 NULL); /* completion routine */
+		
+		DWORD dwNumberbytes;
+		GetOverlappedResult(hDir, &overl, &dwNumberbytes, FALSE);
+		HANDLE hp[2] = {overl.hEvent, hEvtQuitProgram};
+		DWORD dwRet = 0;
+		switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
+			case WAIT_OBJECT_0:
+				break;
+			case WAIT_OBJECT_0+1: // the user asked to quit the program
+				return;
+			default:
+				break;
+			}
+		CloseHandle(overl.hEvent);
+
 
 		//EnterCriticalSection( &cs );
 		//cout << "                         \r";
 
 		//////////////
-		// Check if some source files have changed and compute the according compilation requirement 
+		// Check if some source file has changed and prepare the compilation requirement accordingly
 		MAKETYPE maketype = Unecessary;
 		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
 		do { 
@@ -608,11 +767,23 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 			{
 				md5 dg_new;
 				// modification of the tex file?
-				if( !_tcscmp(filename,maintexfilename.c_str())  ) {
+				if( !_tcscmp(filename,maintexfilename.c_str()) ) {
 					// has the digest changed?
 					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
  						dg_tex = dg_new;
 						if(!hMakeThread) cout << fgDepFile << "+ " << maintexfilename << " changed\n";
+						maketype = max(Partial, maketype);
+					}
+					else {
+						if(!hMakeThread) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+					}
+				}
+				// modification of the bibtex file?
+				else if( !_tcscmp(filename,bblfilename.c_str()) ) {
+					// has the digest changed?
+					if( dg_new.DigestFile(filename) && (dg_bbl != dg_new) ) {
+ 						dg_bbl = dg_new;
+						if(!hMakeThread) cout << fgDepFile << "+ " << filename << "(bibtex) changed\n";
 						maketype = max(Partial, maketype);
 					}
 					else {
@@ -661,30 +832,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		while( pFileNotify->NextEntryOffset );
 		//LeaveCriticalSection( &cs ); 
 
-		if( maketype != Unecessary ) {
-			/// abort the current "make" thread if it is already started
-			if( hMakeThread ) {
-				SetEvent(hEvtAbortMake);
-				// wait for the "make" thread to end
-				WaitForSingleObject(hMakeThread, INFINITE);
-			}			
-			
-			// Create a new "make" thread.
-			//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
-			//  otherwise, if we pass the address of a locally defined variable as a parameter to 
-			//  CreateThrear, the content of the structure may change
-			//  by the time the make thread is created (since the current thread runs concurrently).
-			MAKETHREADPARAM *p = new MAKETHREADPARAM;
-			p->maketype = maketype;
-			p->mainfilebasename = mainfilebase;
-			DWORD makethreadID;
-			hMakeThread = CreateThread( NULL,
-                    0,
-                    (LPTHREAD_START_ROUTINE) MakeThread,
-                    (LPVOID)p,
-                    0,
-                    &makethreadID);
-		}
+		RestartMakeThread(maketype, mainfilebase);
 
 		/*EnterCriticalSection( &cs );
 		if(!hMakeThread) cout << fgMsg << "-- waiting for changes...\r";
