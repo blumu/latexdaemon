@@ -392,6 +392,40 @@ CSimpleOptTempl<SOCHAR>::Next()
             }
         }
 
+////////////////// addition by william blum
+		//// if we didn't find this option and it is a VERY short form (i.e. with no dash)
+		//// option then we try the alternative forms
+  //      if (nTableIdx < 0
+  //          && !m_pszOptionArg
+  //          && m_pszOptionText[0] )
+  //      {
+  //          // test for a short-form with argument if appropriate
+  //          if (m_nFlags & SO_O_SHORTARG) {
+  //              m_szShort[1] = m_pszOptionText[1];
+  //              int nIdx = LookupOption(m_szShort);
+  //              if (nIdx >= 0
+  //                  && (m_rgOptions[nIdx].nArgType == SO_REQ_CMB
+  //                      || m_rgOptions[nIdx].nArgType == SO_OPT))
+  //              {
+  //                  m_pszOptionArg  = &m_pszOptionText[2];
+  //                  m_pszOptionText = m_szShort;
+  //                  nTableIdx       = nIdx;
+  //              }
+  //          }
+
+  //          // test for a clumped short-form option string
+  //          if (m_nFlags & SO_O_CLUMP)  {
+  //              m_pszClump = &m_pszOptionText[1];
+  //              ++m_nNextOption;
+  //              if (nOptIdx > m_nOptionIdx) {
+  //                  ShuffleArg(m_nOptionIdx, nOptIdx - m_nOptionIdx);
+  //              }
+  //              return Next();
+  //          }
+  //      }
+/////////////////////////////////////////////
+
+
         // The option wasn't found. If it starts with a switch character
         // and we are not suppressing errors for invalid options then it
         // is reported as an error, otherwise it is data.

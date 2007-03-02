@@ -1,7 +1,38 @@
-<p class="date"> 3 Mar 2007 - Version 0.903 </p>
+<p class="date"> 2 Mar 2007 - Version 0.904 </p>
+<ul>
+	<li>The command line options -forcecompile and -forcefullcompile have merged into the command line option
+	    -force={compile,fullcompile}</li>
+	<li>New command line option -afterjob={rest|dvips} to specify a job to start after a successful 
+	compilation of the .tex file. There are just two possible values at the moment:
+	<ul>
+	<li>dvips : convert the dvi file to postscript,</li>
+	<li>rest: do nothing.</li>
+	</ul>
+	<li>New commands available at the prompt: 
+        <ul>
+          <li>h[elp] to show this message</li>
+          <li>u[sage] to show the help on command line parameters usage</li>
+          <li>f[ullcompile] to compile the preamble and the .tex file</li>
+          <li>c[compile] to compile the .tex file using the precompiled preamble</li>
+          <li>d[vips] to convert the .dvi file to postscript</li>
+          <li>p[s2pdf] to convert the .ps file to pdf</li>
+          <li>b[ibtex] to run bibtex on the .tex file</li>
+          <li>q[uit] to quit the program</li>
+        </ul>
+        
+        You can also configure some variables as follows:
+        <ul>
+            <li>ini=inifile   to set the initial format file to inifile</li>
+            <li>preamble={none,external}   to change the preamble mode</li>
+            <li>afterjob={rest,dvips}   to change the job executed after compilation of the .tex file</li>
+        </ul>
+	</li>
+</ul>
+
+<p class="date"> 2 Mar 2007 - Version 0.903 </p>
 <ul>
 	<li>
-		new feature: a command line interface is available while the daemon is running. At the moment
+		new feature: a command prompt interface is available while the daemon is watching for file changes. At the moment
 		there are just 2 commands: 'f' for launching a full compilation and 'c' for a normal compilation.
 	</li>
 </ul>
@@ -55,8 +86,8 @@ ensure that the file content is not modified while computing the digest.</li>
 <p class="date"> 8 December 2006 - Version 0.5 </p>
 <ul>
         <li>new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
-        a source file is modified during compilation. <br>
-        <li>new: the title of the console indicates if some errors occured during Latex compilation. <br>
+        a source file is modified during compilation. </li>
+        <li>new: the title of the console indicates if some errors occured during Latex compilation. </li>
 </ul>
 
 <p class="date"> 7 December 2006 - Version 0.4 </p>
