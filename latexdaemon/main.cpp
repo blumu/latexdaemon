@@ -1,7 +1,7 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"2 March 2007"
+#define VERSION_DATE	"3 March 2007"
 #define VERSION			0.904
 
 // See changelog.html for the list of changes:.
@@ -57,9 +57,10 @@ using namespace std;
 #define DEFAULTPREAMBLE1_EXT            "pre"
 
 #define PROMPT_STRING					"dameon>"
+#define PROMPT_STRING_WATCH				"dameon@>"
 
 // Maximal length of an input command line at the prompt
-#define PROMPT_MAX_INPUT_LENGTH			_MAX_PATH
+#define PROMPT_MAX_INPUT_LENGTH			2*_MAX_PATH
 
 
 // result of timestamp comparison
@@ -68,7 +69,7 @@ using namespace std;
 #define ERR_OUTABSENT  0x02
 #define ERR_SRCABSENT  0x04
 
-// constants corresponding to the different possible jobs which can be exectuted
+// constants corresponding to the different possible jobs that can be exectuted
 enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 
 
@@ -77,11 +78,13 @@ enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 DWORD launch(LPCTSTR cmdline);
 void createWatchingThread();
+void WINAPI CommandPromptThread( void *param );
 void WINAPI WatchingThread( void *param );
+void WINAPI MakeThread( void *param );
 
 // TODO: move the following function to a proper class. After all this is a C++ file!
 int loadfile( CSimpleGlob &glob, JOB initialjob );
-void RestartMakeThread(JOB makejob);
+bool RestartMakeThread(JOB makejob);
 int fullcompile();
 int compile();
 int dvips();
@@ -376,6 +379,7 @@ int make(JOB makejob)
 // thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
 {
+	// prepare the abort event so that other thread can stop this one
 	ResetEvent(hEvtAbortMake);
 
 	//////////////
@@ -394,9 +398,11 @@ void WINAPI MakeThread( void *param )
 		CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+".aux").c_str(), FALSE);
 
 	}
-			EnterCriticalSection( &cs );
-			cout << flush << fgPrompt << PROMPT_STRING;
-			LeaveCriticalSection( &cs );
+	// restore the prompt		
+	EnterCriticalSection( &cs );
+	cout << fgPrompt << (Watch ? PROMPT_STRING_WATCH : PROMPT_STRING);
+	LeaveCriticalSection( &cs );
+
 	free(p);
 	hMakeThread = NULL;
 }
@@ -435,7 +441,7 @@ void WINAPI CommandPromptThread( void *param )
 
 		if( printprompt ) {
 			EnterCriticalSection( &cs );
-			cout << flush << fgPrompt << PROMPT_STRING;
+			cout << fgPrompt << (Watch ? PROMPT_STRING_WATCH : PROMPT_STRING);
 			LeaveCriticalSection( &cs );
 		}
 		printprompt = true;
@@ -560,16 +566,22 @@ void WINAPI CommandPromptThread( void *param )
 			}
 			break;
 		case OPT_COMPILE:
-			RestartMakeThread(Compile);
-			// wait for the "make" thread to end
-			WaitForSingleObject(hMakeThread, INFINITE);
-			printprompt = false;
+			{
+				bool started = RestartMakeThread(Compile);
+				// wait for the "make" thread to end
+				if( started )
+					WaitForSingleObject(hMakeThread, INFINITE);
+				printprompt = !started;
+			}
 			break;
 		case OPT_FULLCOMPILE:
-			RestartMakeThread(FullCompile);
-			// wait for the "make" thread to end
-			WaitForSingleObject(hMakeThread, INFINITE);
-			printprompt = false;
+			{
+				bool started = !RestartMakeThread(FullCompile);
+				// wait for the "make" thread to end
+				if( started )
+					WaitForSingleObject(hMakeThread, INFINITE);
+				printprompt = !started;
+			}
 			break;
 		case OPT_QUIT:
 			wantsmore = false;
@@ -1052,14 +1064,11 @@ int bibtex()
 }
 
 
-// Restart the make thread
-void RestartMakeThread( JOB makejob ) {
-	if( makejob == Rest || !CheckFileLoaded() ) {
-		EnterCriticalSection( &cs );
-		cout << fgPrompt << PROMPT_STRING;
-		LeaveCriticalSection( &cs );
-		return;
-	}
+// Restart the make thread if necessary.
+// returns true if a thread has been launched.
+bool RestartMakeThread( JOB makejob ) {
+	if( makejob == Rest || !CheckFileLoaded() )
+		return false;
 
 	/// abort the current "make" thread if it is already started
 	if( hMakeThread ) {
@@ -1082,15 +1091,16 @@ void RestartMakeThread( JOB makejob ) {
 			(LPVOID)p,
 			0,
 			&makethreadID);
+
+	return hMakeThread!= NULL;
 }
 
-
+// Print a string in a given color only if the output is not already occupied, otherwise do nothing
 void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
 {
 	if( TryEnterCriticalSection(&cs) ){
 		// do not print things if an external program is running				
 		if(!hMakeThread && !ExecutingExternalCommand ) { 			
-			//JadedHoboConsole::console.SetColor( color, JadedHoboConsole::bgMask );
 			cout << color << str;
 		}
 		LeaveCriticalSection(&cs);
@@ -1101,10 +1111,10 @@ void print_if_possible( std::ostream& color( std::ostream&  stream ) , string st
 // Thread responsible of watching the directory and launching compilation when a change is detected
 void WINAPI WatchingThread( void *param )
 {
-	if( !pglob )
+	if( !pglob ) {
+		hWatchingThread = NULL;
 		return;
-
-	ResetEvent(hEvtStopWatching);
+	}
 
 	// get the digest of the dependcy files
 	md5 *dg_deps = new md5 [pglob->FileCount()];
@@ -1112,6 +1122,7 @@ void WINAPI WatchingThread( void *param )
 	{
 		if( !dg_deps[n].DigestFile(pglob->File(n)) ) {
 			cerr << "File " << pglob->File(n) << " cannot be found or opened!\n";
+			hWatchingThread = NULL;
 			return;
 		}
 	}
@@ -1129,8 +1140,13 @@ void WINAPI WatchingThread( void *param )
 	md5 dg_preamble;
 	if( UseExternalPreamble && !dg_preamble.DigestFile(preamble_filename.c_str()) ) {
 		cerr << "File " << preamble_filename << " cannot be found or opened!\n" << fgLatex;
+		hWatchingThread = NULL;
 		return;
 	}
+
+	// reset the stop event so that it can be set if
+	// some thread requires this one to stop
+	ResetEvent(hEvtStopWatching);
 
 	// open the directory to be monitored
 	HANDLE hDir = CreateFile(
@@ -1175,6 +1191,7 @@ void WINAPI WatchingThread( void *param )
 			case WAIT_OBJECT_0:
 				break;
 			case WAIT_OBJECT_0+1: // the user asked to quit the program
+				hWatchingThread = NULL;
 				return;
 			default:
 				break;
@@ -1261,12 +1278,7 @@ void WINAPI WatchingThread( void *param )
 		}
 		while( pFileNotify->NextEntryOffset );
 	
-		if( makejob != Rest )
-			RestartMakeThread(makejob);
-
-		//print_if_possible(fgMsg, "-- waiting for changes...\r" );
-
-
+		RestartMakeThread(makejob);
 	}
 
 	CloseHandle(overl.hEvent);

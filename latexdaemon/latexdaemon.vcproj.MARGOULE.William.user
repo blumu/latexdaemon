@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments=""
+				CommandArguments="-ini=pdflatex &quot;d:\documents\dphil\latex\safetynotes\compos.tex&quot;"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"
