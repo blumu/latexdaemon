@@ -6,17 +6,17 @@
 		then, as in previous version, the daemon will abort the first compilation. However this operation corrupts
 		the .aux file since latex writes this file during the compilation. With the new version of the daemon, such situation will
 		be recovered by restoring the backup copy of the .aux file.
-
 	</li>
 	<li>The command line options -forcecompile and -forcefullcompile have merged into the command line option
 	    -force={compile,fullcompile}</li>
 	<li>Command line option -nowatch becomes -watch=no</li>
 	<li>New command line option -afterjob={rest|dvips} to specify a job to start after a successful 
 	compilation of the .tex file. There are just two possible values at the moment:
-	<ul>
-	<li>dvips : convert the dvi file to postscript,</li>
-	<li>rest: do nothing.</li>
-	</ul>
+		<ul>
+			<li>dvips : convert the dvi file to postscript,</li>
+			<li>rest: do nothing.</li>
+		</ul>
+	</li>
 	<li>New commands available at the prompt: 
         <ul>
 			<li>b[ibtex] to run bibtex on the .tex file</li>
@@ -32,7 +32,6 @@
 			<li>u[sage] to show the help on command line parameters usage</li>
 			<li>v[iew]          to view the output file (dvi or pdf depending on the ini file)</li>
 		</ul>
-        
         You can also set configuration variables with:
         <ul>
             <li>ini=inifile set the initial format file to inifile</li>
