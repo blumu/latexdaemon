@@ -155,7 +155,13 @@ namespace JadedHoboConsole
         
         return os;
     }
-    
+    inline std::ostream& fg_locyan( std::ostream& os )
+    {
+        os.flush();
+        console.SetColor( fgLoCyan, bgMask );
+        
+        return os;
+    }
     inline std::ostream& fg_magenta( std::ostream& os )
     {
         os.flush();

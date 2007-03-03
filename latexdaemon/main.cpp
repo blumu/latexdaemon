@@ -50,7 +50,7 @@ using namespace std;
 #define fgIgnoredfile	JadedHoboConsole::fg_gray
 #define fgNormal		JadedHoboConsole::fg_lowhite
 #define fgDepFile		JadedHoboConsole::fg_cyan
-#define fgCommandLine	JadedHoboConsole::fg_magenta
+#define fgPrompt		JadedHoboConsole::fg_locyan
 
 #define DEFAULTPREAMBLE2_BASENAME       "preamble"
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME ".tex"
@@ -74,18 +74,22 @@ enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 
 //////////
 /// Prototypes
-void RestartMakeThread( JOB makejob, LPCTSTR mainfilebase);
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob);
-DWORD launch(LPCTSTR cmdline);
-bool fullcompile(LPCTSTR texbasename);
-bool compile(LPCTSTR texbasename);
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
-bool dvips(LPCTSTR texbasename);
-bool ps2pdf(LPCTSTR texbasename);
-bool bibtex(LPCTSTR texbasename);
-bool edit(LPCTSTR texbasename);
-bool view(LPCTSTR texbasename);
-bool openfolder(LPCTSTR texbasename);
+DWORD launch(LPCTSTR cmdline);
+void createWatchingThread();
+void WINAPI WatchingThread( void *param );
+
+// TODO: move the following function to a proper class. After all this is a C++ file!
+int loadfile( CSimpleGlob &glob, JOB initialjob );
+void RestartMakeThread(JOB makejob);
+bool fullcompile();
+bool compile();
+bool dvips();
+bool ps2pdf();
+bool bibtex();
+bool edit();
+bool view();
+bool openfolder();
 
 
 //////////
@@ -100,20 +104,23 @@ bool UseExternalPreamble = true;
 // Set to true when an external command is running (function launch())
 bool ExecutingExternalCommand = false;
 
+// watch for file changes ?
+bool Watch = true;
+
 // what to do after compilation? (can be change using the -afterjob command argument)
 JOB afterjob = Rest;
 
 // handle of the "make" thread
 HANDLE hMakeThread = NULL;
 
-// handle of the comment prompt thread
-HANDLE hCommandPromptThread;
+// handle of the watching thread
+HANDLE hWatchingThread = NULL;
 
 // Event fired when the make thread needs to be aborted
 HANDLE hEvtAbortMake = NULL;
 
-// Event fired when the user wants to quit the program
-HANDLE hEvtQuitProgram = NULL;
+// Fire this event to request the watching thread to abort
+HANDLE hEvtStopWatching = NULL;
 
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
@@ -123,9 +130,12 @@ string preamble_filename = "";
 string preamble_basename = "";
 
 // Path where the main tex file resides
-string texdir;
-string texfullpath;
+string texdir = "";
+string texfullpath = "";
+string texbasename = "";
 
+// This glob object contains the list of dependencies
+CSimpleGlob *pglob = NULL;
 
 // by default the output extension is set to ".dvi", it must be changed to ".pdf" if pdflatex is used
 string output_ext = ".dvi";
@@ -133,17 +143,21 @@ string output_ext = ".dvi";
 // type of the parameter passed to the "make" thread
 typedef struct {
 	JOB			makejob;
-	LPCTSTR		mainfilebasename;
 } MAKETHREADPARAM  ;
+
+// type of the parameter passed to the "watching" thread
+typedef struct {
+	//CSimpleGlob  *glob;
+} WATCHTHREADPARAM  ;
 
 
 // define the ID values to indentify the option
 enum { 
 	// command line options
-	OPT_USAGE, OPT_INI, OPT_NOWATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
+	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
 	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, 
-	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER
+	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD
 };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
@@ -159,18 +173,18 @@ enum {
 
 // command line argument options
 CSimpleOpt::SOption g_rgOptions[] = {
-    { OPT_USAGE,		_T("-?"),			SO_NONE   },
-    { OPT_USAGE,		_T("--help"),		SO_NONE   },
+    { OPT_USAGE,		_T("-?"),			SO_NONE    },
+    { OPT_USAGE,		_T("--help"),		SO_NONE    },
     { OPT_USAGE,		_T("-help"),		SO_NONE    },
-    { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
+    { OPT_INI,			_T("-ini"),			SO_REQ_CMB },
     { OPT_INI,			_T("--ini"),		SO_REQ_CMB },
-    { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
+    { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB },
     { OPT_PREAMBLE,		_T("--preamble"),	SO_REQ_CMB },
-    { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
+    { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB },
     { OPT_AFTERJOB,		_T("--afterjob"),	SO_REQ_CMB },
-	{ OPT_NOWATCH,		_T("-nowatch"),		SO_NONE  },
-    { OPT_NOWATCH,		_T("--nowatch"),	SO_NONE  },
-    { OPT_FORCE,		_T("-force"),		SO_REQ_SEP  },
+	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB },
+    { OPT_WATCH,		_T("--watch"),		SO_REQ_CMB },
+    { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
     { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
     SO_END_OF_OPTIONS                   // END
 };
@@ -192,6 +206,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_COMPILE,		_T("-compile"),		SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
+	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB	},
     { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
     { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
@@ -203,6 +218,8 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 	{ OPT_VIEWOUTPUT,	_T("-view"),		SO_NONE		},
 	{ OPT_OPENFOLDER,	_T("-o"),			SO_NONE		},
 	{ OPT_OPENFOLDER,	_T("-open"),		SO_NONE		},
+	{ OPT_LOAD,			_T("-l"),			SO_NONE		},
+	{ OPT_LOAD,			_T("-load"),		SO_NONE		},
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -219,8 +236,8 @@ void ShowUsage(TCHAR *progname) {
 		 << "* options can be:" << endl
 		 << " --help" << endl 
 		 << "   Show this help message." <<endl<<endl
-	     << " --nowatch" << endl 
-		 << "   Launch the compilation if necessary and then exit without watching for file changes."<<endl<<endl
+		 << " --watch={yes|no}" << endl 
+		 << "   If set to yes then it will run the necessary compilation and then exit without watching for file changes."<<endl<<endl
 		 << " --force {compile|fullcompile}" << endl
 		 << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
 		 << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
@@ -246,7 +263,10 @@ void ShowUsage(TCHAR *progname) {
 // update the title of the console
 void SetTitle(string state)
 {
-	SetConsoleTitle((state + " -  "+ texinifile + "Daemon - " + texfullpath).c_str());
+	if( texfullpath != "" )
+		SetConsoleTitle((state + " - "+ texinifile + "Daemon - " + texfullpath).c_str());
+	else
+		SetConsoleTitle((state + " - " + texinifile + "Daemon").c_str());
 }
 
 // Code executed when the -ini option is specified
@@ -262,16 +282,19 @@ void ExecuteOptionIni( string optionarg )
 // Code executed when the -preamble option is specified
 void ExecuteOptionPreamble( string optionarg )
 {
+	EnterCriticalSection( &cs );
 	UseExternalPreamble = (optionarg=="none") ? true : false ;
 	if( UseExternalPreamble )
 		cout << "-Use external preamble." << endl;
 	else
 		cout << "-No preamble." << endl;
+	LeaveCriticalSection( &cs );
 }
 
 // Code executed when the -force option is specified
 void ExecuteOptionForce( string optionarg, JOB &force )
 {
+	EnterCriticalSection( &cs );
 	if( optionarg=="fullcompile" ) {
 		force = FullCompile;
 		cout << "-Initial full compilation forced." << endl;
@@ -280,11 +303,13 @@ void ExecuteOptionForce( string optionarg, JOB &force )
 		force = Compile;
 		cout << "-Initial compilation forced." << endl;
 	}
+	LeaveCriticalSection( &cs );
 }
 
 // Code executed when the -afterjob option is specified
 void ExecuteOptionAfterJob( string optionarg )
 {
+	EnterCriticalSection( &cs );
 	if( optionarg=="dvips" ) {
 		afterjob = Dvips;
 		cout << "-After-compilation job set to '" << optionarg << "'" << endl;
@@ -293,23 +318,48 @@ void ExecuteOptionAfterJob( string optionarg )
 		afterjob = Rest;
 		cout << "-After-compilation job set to 'rest'" << endl;
 	}
+	LeaveCriticalSection(&cs);
+}
+
+// Code executed when the -watch option is specified
+void ExecuteOptionWatch( string optionarg )
+{
+	Watch = optionarg != "no";
+	BOOL b = Watch;
+	if( Watch ) {
+		EnterCriticalSection( &cs );
+		cout << "-Watch for file modifications activated" << endl;
+		LeaveCriticalSection( &cs );
+		if( pglob && !hWatchingThread)
+			createWatchingThread();
+	}
+	else {
+		EnterCriticalSection( &cs );
+		cout << "-Watch for file modification desactivated" << endl;
+		LeaveCriticalSection( &cs );
+		if( hWatchingThread ) {
+			// Stop the watching thread
+			SetEvent(hEvtStopWatching);
+			WaitForSingleObject(hWatchingThread, INFINITE);
+		}
+	}
 }
 
 // perform the necessary compilation
-void make(JOB makejob, LPCSTR mainfilebasename)
+void make(JOB makejob)
 {
 	if( makejob != Rest ) {
 		bool bCompOk = true;
 		if( makejob == Compile ) {
 			SetTitle("recompiling...");
-			bCompOk = compile(mainfilebasename);
+			bCompOk = compile();
 		}
 		else if ( makejob == FullCompile ) {
 			SetTitle("recompiling...");
-			bCompOk = fullcompile(mainfilebasename);
+			bCompOk = fullcompile();
 		}
 		if( bCompOk && afterjob == Dvips ) {
-			dvips(mainfilebasename);
+			dvips();
 		}
 
 		SetTitle(bCompOk ? "monitoring" : "(errors) monitoring");
@@ -324,15 +374,25 @@ void WINAPI MakeThread( void *param )
 	//////////////
 	// perform the necessary compilations
 	MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
-	make(p->makejob, p->mainfilebasename);	
-	EnterCriticalSection( &cs );
-	cout << flush << fgCommandLine << PROMPT_STRING;
-	LeaveCriticalSection( &cs ); 
+	make(p->makejob);
 
 	free(p);
-
-	cout <<	flush;
 	hMakeThread = NULL;
+}
+
+// 
+void createWatchingThread(){
+	EnterCriticalSection(&cs);
+	cout << fgMsg << "\n-- Watching directory " << texdir << " for changes...\n" << fgNormal;
+	LeaveCriticalSection( &cs ); 
+	SetTitle("monitoring");
+
+	DWORD watchingthreadID;
+	hWatchingThread = CreateThread( NULL, 0,
+		(LPTHREAD_START_ROUTINE) WatchingThread,
+		0,
+		0,
+		&watchingthreadID);
 }
 
 
@@ -341,7 +401,6 @@ void WINAPI CommandPromptThread( void *param )
 {
 	//////////////
 	// perform the necessary compilations
-	LPCTSTR mainfilebasename = ((MAKETHREADPARAM *)param)->mainfilebasename;
 
 	//////////////
 	// input loop
@@ -355,10 +414,10 @@ void WINAPI CommandPromptThread( void *param )
 
 		if( printprompt ) {
 			EnterCriticalSection( &cs );
-			cout << flush << fgCommandLine << PROMPT_STRING;
+			cout << flush << fgPrompt << PROMPT_STRING;
 			LeaveCriticalSection( &cs );
-			printprompt = false;
 		}
+		printprompt = true;
 
 		// Read a command from the user
 		TCHAR cmdline[PROMPT_MAX_INPUT_LENGTH+5] = _T("cmd -"); // add a dummy command name and the option delimiter
@@ -371,6 +430,7 @@ void WINAPI CommandPromptThread( void *param )
 
 		// Parse the command line
 		CSimpleOpt args(argc, argvw, g_rgPromptOptions, true);
+		unsigned int uiFlags = 0;
 
 		args.Next(); // get the first command recognized
 		if (args.LastError() != SO_SUCCESS) {
@@ -393,61 +453,98 @@ void WINAPI CommandPromptThread( void *param )
 				break;
 			}
 			EnterCriticalSection( &cs );
-			LPCTSTR optiontext = args.OptionText();
-			// remove the extra '-' that we appened before the command name
-			if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
-				optiontext++;
-
-			cout << fgErr << pszError << ": '" << optiontext << "' (use help to get command line help)" 
-				 << endl << flush << fgCommandLine << PROMPT_STRING;
+				LPCTSTR optiontext = args.OptionText();
+				// remove the extra '-' that we appened before the command name
+				if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
+					optiontext++;
+				// don't show error message for the empty command
+				if( !(args.LastError()== SO_OPT_INVALID && optiontext[0] == 0) ) {
+					cout << fgErr << pszError << ": '" << optiontext << "' (use help to get command line help)"  << endl;
+				}
 			LeaveCriticalSection( &cs );
 			continue;
 		}
 
+		uiFlags |= (unsigned int) args.OptionId();
 		switch( args.OptionId() ) {
 		case OPT_USAGE:
 			EnterCriticalSection( &cs );
 				ShowUsage(NULL);
-				cout << endl << fgCommandLine << PROMPT_STRING;
 			LeaveCriticalSection( &cs ); 
 			break;
 		case OPT_HELP:
 			EnterCriticalSection( &cs );
-			cout << fgCommandLine << "The following commands are available:" << endl
-				 << "  b[ibtex] to run bibtex on the .tex file" << endl
-				 << "  c[compile] to compile the .tex file using the precompiled preamble" << endl
-				 << "  d[vips] to convert the .dvi file to postscript" << endl
-				 << "  e[dit] to edit the .tex file" << endl
-				 << "  f[ullcompile] to compile the preamble and the .tex file" << endl
-				 << "  h[elp] to show this message" << endl
-				 << "  o[pen] to open the folder containing the .tex file" << endl
-				 << "  p[s2pdf] to convert the .ps file to pdf" << endl
-				 << "  q[uit] to quit the program" << endl 
-				 << "  u[sage] to show the help on command line parameters usage" << endl
-				 << "  v[iew] to view the output file (dvi or pdf depending on the ini file used)" << endl << endl
+			cout << fgPrompt << "The following commands are available:" << endl
+				 << "  b[ibtex]        to run bibtex on the .tex file" << endl
+				 << "  c[compile]      to compile the .tex file using the precompiled preamble" << endl
+				 << "  d[vips]         to convert the .dvi file to postscript" << endl
+				 << "  e[dit]          to edit the .tex file" << endl
+				 << "  f[ullcompile]   to compile the preamble and the .tex file" << endl
+				 << "  h[elp]          to show this message" << endl
+				 << "  l[oad] file     to change the active .tex file" << endl
+				 << "  o[pen]          to open the folder containing the .tex file" << endl
+				 << "  p[s2pdf]        to convert the .ps file to pdf" << endl
+				 << "  q[uit]          to quit the program" << endl 
+				 << "  u[sage]         to show the help on command line parameters usage" << endl
+				 << "  v[iew]          to view the output file (dvi or pdf depending on the ini file)" << endl << endl
 				 << "You can also configure variables with:" << endl
-				 << "  ini=inifile   set the initial format file to inifile" << endl
-				 << "  preamble={none,external}   set the preamble mode" << endl
-				 << "  afterjob={rest,dvips}   set the job executed after compilation of the .tex file" << endl << endl
-				 << fgCommandLine << PROMPT_STRING;
+				 << "  ini=inifile               set the initial format file to inifile" << endl
+				 << "  preamble={none,external}  set the preamble mode" << endl
+				 << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
+				 << "  watch={yes,no}            to activate/desactive file modification watching" << endl << endl;
 			LeaveCriticalSection( &cs ); 
 			break;
-		case OPT_INI:		ExecuteOptionIni(args.OptionArg());			printprompt=true;	break;
-		case OPT_PREAMBLE:	ExecuteOptionPreamble(args.OptionArg());	printprompt=true;	break;
-		case OPT_AFTERJOB:	ExecuteOptionAfterJob(args.OptionArg());	printprompt=true;	break;
-		case OPT_BIBTEX:		bibtex(mainfilebasename);		printprompt=true;	break;
-		case OPT_DVIPS:			dvips(mainfilebasename);		printprompt=true;	break;
-		case OPT_PS2PDF:		ps2pdf(mainfilebasename);		printprompt=true;	break;
-		case OPT_EDIT:			edit(mainfilebasename);			printprompt=true;	break;
-		case OPT_VIEWOUTPUT:	view(mainfilebasename);			printprompt=true;	break;
-		case OPT_OPENFOLDER:	openfolder(mainfilebasename);	printprompt=true;	break;
+		case OPT_INI:			ExecuteOptionIni(args.OptionArg());			break;
+		case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());	break;
+		case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());	break;
+		case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());		break;
+		case OPT_BIBTEX:		bibtex();		break;
+		case OPT_DVIPS:			dvips();		break;
+		case OPT_PS2PDF:		ps2pdf();		break;
+		case OPT_EDIT:			edit();			break;
+		case OPT_VIEWOUTPUT:	view();			break;
+		case OPT_OPENFOLDER:	openfolder();	break;		
+
+		case OPT_LOAD:
+			// Read the remaining parameters
+			while (args.Next())
+				uiFlags |= (unsigned int) args.OptionId();
+
+			if( hWatchingThread ) {
+				// Stop the watching thread
+				SetEvent(hEvtStopWatching);
+				WaitForSingleObject(hWatchingThread, INFINITE);
+			}
+
+			// Load the file
+			{
+				CSimpleGlob *npglob = new CSimpleGlob(uiFlags);
+
+				if (SG_SUCCESS != npglob->Add(args.FileCount(), args.Files()) ) {
+					cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+					continue;
+				}
+				if( args.FileCount() == 0 ){
+					cout << fgErr << _T("No input file specified!\n" << fgNormal);
+					continue;
+				}
+				int ret = loadfile(*npglob, Rest);
+				if( (ret == 0) && Watch ) {
+					if( pglob )
+						delete pglob;
+					pglob = npglob;
+					// Start the watching thread
+					createWatchingThread();
+				}
+			}
+			break;
 		case OPT_COMPILE:
-			RestartMakeThread(Compile, mainfilebasename);
+			RestartMakeThread(Compile);
 			// wait for the "make" thread to end
 			WaitForSingleObject(hMakeThread, INFINITE);
 			break;
 		case OPT_FULLCOMPILE:
-			RestartMakeThread(FullCompile, mainfilebasename);
+			RestartMakeThread(FullCompile);
 			// wait for the "make" thread to end
 			WaitForSingleObject(hMakeThread, INFINITE);
 			break;
@@ -458,40 +555,41 @@ void WINAPI CommandPromptThread( void *param )
 
 		default:
 			EnterCriticalSection( &cs );
-			cout << fgErr << "Unrecognized command: '" << args.OptionText() << "' (use help to get command line help)" 
-				 << endl << flush << fgCommandLine << PROMPT_STRING;
+			cout << fgErr << "Unrecognized command: '" << args.OptionText() << "' (use help to get command line help)" << endl ;
 			LeaveCriticalSection( &cs );
+			printprompt = true;
 			break;
 		}
-//		uiFlags |= (unsigned int) args.OptionId();	
+
 	}
 
-	free(param);
-	// raise the event saying that the user wants to quit
-	SetEvent(hEvtQuitProgram);
+	// Preparing to exit the program: ask the children thread to terminate
+	HANDLE hp[2];
+	int i=0;
+	if( hWatchingThread ) {
+		// Stop the watching thread
+		SetEvent(hEvtStopWatching);
+		hp[i++] = hWatchingThread;
+	}
+	if( hMakeThread ) {
+		// Stop the make thread
+		SetEvent(hEvtAbortMake);
+		hp[i++] = hMakeThread;
+	}
+	WaitForMultipleObjects(i, hp, TRUE, INFINITE);
+
 }
 
 int _tmain(int argc, TCHAR *argv[])
 {
-	InitializeCriticalSection(&cs);
+	SetTitle("prompt");
 
-	// create the event used to abort the "make" thread
-	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
-	// create the event used to quit the program
-	hEvtQuitProgram = CreateEvent(NULL,TRUE,FALSE,NULL);
-
-	cout << APP_NAME << " " << VERSION << " by William Blum, " VERSION_DATE << endl << endl;;
+	cout << endl << APP_NAME << " " << VERSION << " by William Blum, " VERSION_DATE << endl << endl;;
 
     unsigned int uiFlags = 0;
 
-	if (argc <= 1 ) {
-		ShowUsage(argv[0]);
-		return 1;
-	}
-
 	// default options, can be overwritten by command line parameters
-	JOB force = Rest;
-	bool Watch = true;
+	JOB initialjob = Rest;
 
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
@@ -503,8 +601,7 @@ int _tmain(int argc, TCHAR *argv[])
                 break;
             case SO_OPT_MULTIPLE:
                 pszError = _T("Option matched multiple strings");
-                break;
-            case SO_ARG_INVALID:
+                break;case SO_ARG_INVALID:
                 pszError = _T("Option does not accept argument");
                 break;
             case SO_ARG_INVALID_TYPE:
@@ -523,8 +620,8 @@ int _tmain(int argc, TCHAR *argv[])
 		switch( args.OptionId() ) {
 			case OPT_USAGE:         ShowUsage(NULL);							return 0;
 			case OPT_INI:			ExecuteOptionIni(args.OptionArg());			break;
-			case OPT_NOWATCH:		Watch = false;								break;
-			case OPT_FORCE:			ExecuteOptionForce(args.OptionArg(),force); break;
+			case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg()); 		break;
+			case OPT_FORCE:			ExecuteOptionForce(args.OptionArg(),initialjob); break;
 			case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());	break;
 			case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());	break;
 			default:				break;
@@ -532,16 +629,49 @@ int _tmain(int argc, TCHAR *argv[])
         uiFlags |= (unsigned int) args.OptionId();
     }
 	
-    CSimpleGlob glob(uiFlags);
-    if (SG_SUCCESS != glob.Add(args.FileCount(), args.Files()) ) {
-        _tprintf(_T("Error while globbing files! Make sure the paths given as parameters are correct.\n"));
-        return 1;
-    }
-	if( args.FileCount() == 0 ){
-        _tprintf(_T("No input file specified!\n"));
-        return 1;
-    }
+	// create the event used to abort the "make" thread
+	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
+	// create the event used to abort the "watching" thread
+	hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
+	// initialize the critical section used to sequentialized console output
+	InitializeCriticalSection(&cs);
 
+		int ret = -1;
+		if (argc > 1 ) {
+			pglob = new CSimpleGlob(uiFlags);
+			if (SG_SUCCESS != pglob->Add(args.FileCount(), args.Files()) ) {
+				cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
+				return 1;
+			}
+			if( args.FileCount() == 0 ){
+				cout << fgErr << _T("No input file specified!\n") << fgNormal;
+				return 1;
+			}
+			ret = loadfile(*pglob, initialjob);
+		}
+
+		if( Watch ) { // If watch has been requested by the user
+			// if some correct file was given as a command line parameter 
+			if( ret == 0 )				
+				createWatchingThread(); // then start watching
+			
+			// start the prompt loop
+			CommandPromptThread(NULL);
+		}
+	
+	if(pglob)
+		delete pglob;
+
+	CloseHandle(hEvtAbortMake);
+	CloseHandle(hEvtStopWatching);
+	return ret;
+}
+
+
+// Load the .tex file specified in the first argument of args, the remainings arguements are
+// the dependencies of the .tex file.
+int loadfile( CSimpleGlob &glob, JOB initialjob )
+{
 	cout << "-Main file: '" << glob.File(0) << "'\n";
 
 	TCHAR drive[4];
@@ -556,6 +686,7 @@ int _tmain(int argc, TCHAR *argv[])
 	// set the global variables
 	texfullpath = fullpath;
 	texdir = string(drive) + dir;
+	texbasename = mainfile;
 
 	// set console title
 	SetTitle("Initialization");
@@ -563,7 +694,7 @@ int _tmain(int argc, TCHAR *argv[])
 	cout << "-Directory: " << drive << dir << "\n";
 
 	if(  _tcsncmp(ext, ".tex", 4) )	{
-		cerr << fgErr << "Error: the file has not the .tex extension!\n\n";
+		cerr << fgErr << "Error: the file has not the .tex extension!\n\n" << fgNormal;
 		return 1;
 	}
 	if( glob.FileCount()>1 ) {
@@ -578,8 +709,7 @@ int _tmain(int argc, TCHAR *argv[])
 		return 1;
 
 	// change current directory
-	string path = string(drive) +  dir;
-	_chdir(path.c_str());
+	_chdir(texdir.c_str());
 
 	int res; // will contain the result of the comparison of the timestamp of the preamble file with the format file
 
@@ -597,7 +727,7 @@ int _tmain(int argc, TCHAR *argv[])
 			res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
 			UseExternalPreamble = !(res & ERR_SRCABSENT);
 			if ( !UseExternalPreamble ) {
-				cout << fgWarning << "Warning: Preamble file not found! I have tried to look for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and then " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode desactivated!\n";
+				cout << fgWarning << "Warning: Preamble file not found! (I have tried " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode desactivated!\n";
 			}
 		}
 	}
@@ -605,11 +735,8 @@ int _tmain(int argc, TCHAR *argv[])
 	if( UseExternalPreamble )
 		cout << "-Preamble file: " << preamble_filename << "\n";
 
-	if( force == FullCompile ) {
-		make(FullCompile, mainfile);
-	}
-	else if ( force == Compile ) {
-		make(Compile, mainfile);
+	if( initialjob != Rest ) {
+		make(initialjob);
 	}
 	// Determine what needs to be recompiled based on the files that have been touched since last compilation.
 	else {
@@ -618,35 +745,35 @@ int _tmain(int argc, TCHAR *argv[])
 		if( UseExternalPreamble && ((res == SRC_FRESHER) || (res & ERR_OUTABSENT)) ) {
 			if( res == SRC_FRESHER ) {
 				 cout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
-				 cout << fgMsg << "  Let's recreate the format file and recompile " << mainfile << ".tex.\n";
+				 cout << fgMsg << "  Let's recreate the format file and recompile " << texbasename << ".tex.\n";
 			}
 			else {		
 				cout << fgMsg << "+ " << preamble_basename << ".fmt does not exist. Let's create it...\n";
 			}
-			make(FullCompile, mainfile);
+			make(FullCompile);
 		}
 		
 		// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
 		else {
 			// check if the main file has been modified since the creation of the dvi file
-			int maintex_comp = compare_timestamp((string(mainfile)+".tex").c_str(), (string(mainfile)+output_ext).c_str());
+			int maintex_comp = compare_timestamp((texbasename+".tex").c_str(), (texbasename+output_ext).c_str());
 
 			// check if a dependency file has been modified since the creation of the dvi file
 			bool dependency_fresher = false;
 			for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
-				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (string(mainfile)+output_ext).c_str()) ;
+				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (texbasename+output_ext).c_str()) ;
 
 			if ( maintex_comp & ERR_SRCABSENT ) {
-				cout << fgErr << "File " << mainfile << ".tex not found!\n";
+				cout << fgErr << "File " << mainfile << ".tex not found!\n" << fgNormal;
 				return 2;
 			}
 			else if ( maintex_comp & ERR_OUTABSENT ) {
 				cout << fgMsg << "+ " << mainfile << output_ext << " does not exist. Let's create it...\n";
-				make(Compile, mainfile);
+				make(Compile);
 			}
 			else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
 				cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
-				make(Compile, mainfile);
+				make(Compile);
 			}
 			// else 
 			//   We have maintex_comp == OUT_FRESHER and dependency_fresher=false therefore 
@@ -654,24 +781,6 @@ int _tmain(int argc, TCHAR *argv[])
 		}
 	}
 
-	if( Watch ) {
-	    cout << fgMsg << "-- Watching directory " << path.c_str() << " for changes...\n" << fgNormal;
-		SetTitle("monitoring");
-		// Start the command shell thread
-		MAKETHREADPARAM *p = new MAKETHREADPARAM;
-		p->mainfilebasename = mainfile;
-		DWORD commandpromptthreadID;
-		hCommandPromptThread = CreateThread( NULL, 0,
-				(LPTHREAD_START_ROUTINE) CommandPromptThread,
-				(LPVOID)p,
-				0,
-				&commandpromptthreadID);
-
-		WatchTexFiles(path.c_str(), mainfile, glob);
-	}
-
-	CloseHandle(hEvtAbortMake);
-	CloseHandle(hEvtQuitProgram);
 	return 0;
 }
 
@@ -723,13 +832,12 @@ DWORD launch(LPCTSTR cmdline)
 		&si,            // Pointer to STARTUPINFO structure
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
-		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n";
+		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
 		return -1;
 	}
 	free(szCmdline);
 
 	// Wait until child process exits or the make process is aborted.
-	//WaitForSingleObject( pi.hProcess, INFINITE );	
 	HANDLE hp[2] = {pi.hProcess, hEvtAbortMake};
 	DWORD dwRet = 0;
 	switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
@@ -755,10 +863,25 @@ DWORD launch(LPCTSTR cmdline)
 	return dwRet;
 }
 
+// Check that a file has been loaded
+bool CheckFileLoaded()
+{
+	if( texbasename == "" ) {
+		EnterCriticalSection( &cs );
+		cout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
+		LeaveCriticalSection( &cs ); 
+		return false;
+	}
+	else
+		return true;
+}
 
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
-bool fullcompile(LPCTSTR texbasename)
+bool fullcompile()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	// Check that external preamble exists
 	if( UseExternalPreamble ) {
 		EnterCriticalSection( &cs );
@@ -769,13 +892,16 @@ bool fullcompile(LPCTSTR texbasename)
 		if( launch(cmdline.c_str()) )
 			return false;
 	}
-	return compile(texbasename);
+	return compile();
 }
 
 
 // Compile the final tex file using the precompiled preamble
-bool compile(LPCTSTR texbasename)
+bool compile()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	string cmdline;
 
 	EnterCriticalSection( &cs );
@@ -805,8 +931,11 @@ bool compile(LPCTSTR texbasename)
 }
 
 // Convert the postscript file to pdf
-bool ps2pdf(LPCTSTR texbasename)
+bool ps2pdf()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
 	string cmdline = string("ps2pdf ")+texbasename+".ps";
@@ -816,8 +945,11 @@ bool ps2pdf(LPCTSTR texbasename)
 }
 
 // Edit the .tex file
-bool edit(LPCTSTR texbasename)
+bool edit()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
     LeaveCriticalSection( &cs ); 
@@ -830,8 +962,11 @@ bool edit(LPCTSTR texbasename)
 }
 
 // View the output file
-bool view(LPCTSTR texbasename)
+bool view()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- view " << texbasename << output_ext << "...\n";
     LeaveCriticalSection( &cs ); 
@@ -844,8 +979,11 @@ bool view(LPCTSTR texbasename)
 }
 
 // Open the folder containing the .tex file
-bool openfolder(LPCTSTR texbasename)
+bool openfolder()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- open directory " << texdir << " ...\n";
     LeaveCriticalSection( &cs ); 
@@ -859,8 +997,11 @@ bool openfolder(LPCTSTR texbasename)
 
 
 // Convert the dvi file to postscript using dvips
-bool dvips(LPCTSTR texbasename)
+bool dvips()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Converting " << texbasename << ".dvi to postscript...\n";
 	string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
@@ -870,8 +1011,11 @@ bool dvips(LPCTSTR texbasename)
 }
 
 // Run bibtex on the tex file
-bool bibtex(LPCTSTR texbasename)
+bool bibtex()
 {
+	if( !CheckFileLoaded() )
+		return false;
+
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
 	string cmdline = string("bibtex ")+texbasename;
@@ -882,8 +1026,11 @@ bool bibtex(LPCTSTR texbasename)
 
 
 // Restart the make thread
-void RestartMakeThread( JOB makejob, LPCTSTR mainfilebase) {
+void RestartMakeThread( JOB makejob ) {
 	if( makejob == Rest )
+		return;
+
+	if( !CheckFileLoaded() )
 		return;
 
 	/// abort the current "make" thread if it is already started
@@ -897,10 +1044,9 @@ void RestartMakeThread( JOB makejob, LPCTSTR mainfilebase) {
 	//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
 	//  otherwise, if we pass the address of a locally defined variable as a parameter to 
 	//  CreateThread, the content of the structure may change
-	//  by the time the make thread is created (since the current thread runs concurrently).
+	//  by the time the make texbasenamethread is created (since the current thread runs concurrently).
 	MAKETHREADPARAM *p = new MAKETHREADPARAM;
 	p->makejob = makejob;
-	p->mainfilebasename = mainfilebase;
 	DWORD makethreadID;
 	hMakeThread = CreateThread( NULL,
 			0,
@@ -917,24 +1063,30 @@ bool IsExecutingExternal()
 //	return hMakeThread!=0;
 }
 
-void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
+
+void WINAPI WatchingThread( void *param )
 {
+	if( !pglob )
+		return;
+
+	ResetEvent(hEvtStopWatching);
+
 	// get the digest of the dependcy files
-	md5 *dg_deps = new md5 [glob.FileCount()];
-    for (int n = 0; n < glob.FileCount(); ++n)
+	md5 *dg_deps = new md5 [pglob->FileCount()];
+    for (int n = 0; n < pglob->FileCount(); ++n)
 	{
-		if( !dg_deps[n].DigestFile(glob.File(n)) ) {
-			cerr << "File " << glob.File(n) << " cannot be found or opened!\n";
+		if( !dg_deps[n].DigestFile(pglob->File(n)) ) {
+			cerr << "File " << pglob->File(n) << " cannot be found or opened!\n";
 			return;
 		}
 	}
 
 	// get the digest of the main tex file
-	string maintexfilename = string(mainfilebase) + ".tex";
+	string maintexfilename = texbasename + ".tex";
 	md5 dg_tex = dg_deps[0];
 
 	// get the digest of the file containing bibtex bibliography references
-	string bblfilename = string(mainfilebase) + ".bbl";
+	string bblfilename = texbasename + ".bbl";
 	md5 dg_bbl;
 	dg_bbl.DigestFile(bblfilename.c_str());
 	
@@ -945,20 +1097,9 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		return;
 	}
 
-	//// open the directory to be monitored
-	//HANDLE hDir = CreateFile(
-	//	texpath, /* pointer to the directory containing the tex files */
-	//	FILE_LIST_DIRECTORY,                /* access (read-write) mode */
-	//	FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
-	//	NULL, /* security descriptor */
-	//	OPEN_EXISTING, /* how to create */
-	//	FILE_FLAG_BACKUP_SEMANTICS  , //| FILE_FLAG_OVERLAPPED, /* file attributes */
-	//	NULL /* file with attributes to copy */
-	//  );
-
 	// open the directory to be monitored
 	HANDLE hDir = CreateFile(
-		texpath, /* pointer to the directory containing the tex files */
+		texdir.c_str(), /* pointer to the directory containing the tex files */
 		FILE_LIST_DIRECTORY,                /* access (read-write) mode */
 		FILE_SHARE_READ|FILE_SHARE_DELETE|FILE_SHARE_WRITE,  /* share mode */
 		NULL, /* security descriptor */
@@ -970,26 +1111,14 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 
 	BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
 
+	OVERLAPPED overl;
+	overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
+
 	while( 1 )
 	{
 		FILE_NOTIFY_INFORMATION *pFileNotify;
 		DWORD BytesReturned;
 
-		//GetOverlappedResult(hDir, &overlapped, &BytesReturned, TRUE);
-		//ReadDirectoryChangesW(
-		//	 hDir, /* handle to directory */
-		//	 &buffer, /* read results buffer */
-		//	 sizeof(buffer), /* length of buffer */
-		//	 FALSE, /* monitoring option */
-		//	 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
-		//	 FILE_NOTIFY_CHANGE_LAST_WRITE
-		//	 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
-		//	 , /* filter conditions */
-		//	 &BytesReturned, /* bytes returned */
-		//	 NULL, /* overlapped buffer */
-		//	 NULL); /* completion routine */
-		OVERLAPPED overl;
-		overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
 		ReadDirectoryChangesW(
 			 hDir, /* handle to directory */
 			 &buffer, /* read results buffer */
@@ -1005,7 +1134,7 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		
 		DWORD dwNumberbytes;
 		GetOverlappedResult(hDir, &overl, &dwNumberbytes, FALSE);
-		HANDLE hp[2] = {overl.hEvent, hEvtQuitProgram};
+		HANDLE hp[2] = {overl.hEvent, hEvtStopWatching};
 		DWORD dwRet = 0;
 		switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
 			case WAIT_OBJECT_0:
@@ -1015,8 +1144,6 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 			default:
 				break;
 			}
-		CloseHandle(overl.hEvent);
-
 
 		//EnterCriticalSection( &cs );
 		//cout << "                         \r";
@@ -1078,13 +1205,13 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 				else {
 					// is it a dependency file?
 					int i;
-					for(i=1; i<glob.FileCount(); i++)
-						if(!_tcscmp(filename,glob.File(i))) break;
+					for(i=1; i<pglob->FileCount(); i++)
+						if(!_tcscmp(filename,pglob->File(i))) break;
 
-					if( i<glob.FileCount() ) {
-						if ( dg_new.DigestFile(glob.File(i)) && (dg_deps[i]!=dg_new) ) {
+					if( i<pglob->FileCount() ) {
+						if ( dg_new.DigestFile(pglob->File(i)) && (dg_deps[i]!=dg_new) ) {
 							dg_deps[i] = dg_new;
-							if(!IsExecutingExternal()) cout << fgDepFile << "+ \"" << glob.File(i) << "\" changed (dependency file).\n";
+							if(!IsExecutingExternal()) cout << fgDepFile << "+ \"" << pglob->File(i) << "\" changed (dependency file).\n";
 							makejob = max(Compile, makejob);
 						}
 						else {
@@ -1103,15 +1230,17 @@ void WatchTexFiles(LPCTSTR texpath, LPCTSTR mainfilebase, CSimpleGlob &glob)
 		while( pFileNotify->NextEntryOffset );
 		//LeaveCriticalSection( &cs ); 
 
-		RestartMakeThread(makejob, mainfilebase);
+		RestartMakeThread(makejob);
 
 		/*EnterCriticalSection( &cs );
 		if(!IsExecutingExternal()) cout << fgMsg << "-- waiting for changes...\r";
 		LeaveCriticalSection( &cs ); */
 
 	}
-//	CloseHandle(overlapped.hEvent);
+
+	CloseHandle(overl.hEvent);
     CloseHandle(hDir);
 
+	hWatchingThread = NULL;
 }
 
