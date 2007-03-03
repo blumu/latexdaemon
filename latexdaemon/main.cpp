@@ -400,7 +400,7 @@ void WINAPI MakeThread( void *param )
 	}
 	// restore the prompt		
 	EnterCriticalSection( &cs );
-	cout << fgPrompt << (Watch ? PROMPT_STRING_WATCH : PROMPT_STRING);
+	cout << fgPrompt << (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
 	LeaveCriticalSection( &cs );
 
 	free(p);
@@ -441,7 +441,7 @@ void WINAPI CommandPromptThread( void *param )
 
 		if( printprompt ) {
 			EnterCriticalSection( &cs );
-			cout << fgPrompt << (Watch ? PROMPT_STRING_WATCH : PROMPT_STRING);
+			cout << fgPrompt << (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
 			LeaveCriticalSection( &cs );
 		}
 		printprompt = true;
@@ -672,14 +672,13 @@ int _tmain(int argc, TCHAR *argv[])
 	InitializeCriticalSection(&cs);
 
 		int ret = -1;
-		if (argc > 1 ) {
-			pglob = new CSimpleGlob(uiFlags);
+		pglob = new CSimpleGlob(uiFlags);
+		if( args.FileCount() == 0 ){
+			cout << fgWarning << _T("No input file specified.\n") << fgNormal;
+		}
+		else {
 			if (SG_SUCCESS != pglob->Add(args.FileCount(), args.Files()) ) {
 				cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
-				return 1;
-			}
-			if( args.FileCount() == 0 ){
-				cout << fgErr << _T("No input file specified!\n") << fgNormal;
 				return 1;
 			}
 			ret = loadfile(*pglob, initialjob);
