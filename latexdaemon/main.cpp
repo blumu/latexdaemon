@@ -2,7 +2,8 @@
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"3 March 2007"
-#define VERSION			0.904
+#define VERSION			0.9
+#define BUILD			005
 
 // See changelog.html for the list of changes:.
 
@@ -83,7 +84,7 @@ void WINAPI WatchingThread( void *param );
 void WINAPI MakeThread( void *param );
 
 // TODO: move the following function to a proper class. After all this is a C++ file!
-int loadfile( CSimpleGlob &glob, JOB initialjob );
+int loadfile( CSimpleGlob *pnglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
 int fullcompile();
 int compile();
@@ -537,33 +538,29 @@ void WINAPI CommandPromptThread( void *param )
 			while (args.Next())
 				uiFlags |= (unsigned int) args.OptionId();
 
-			if( hWatchingThread ) {
-				// Stop the watching thread
-				SetEvent(hEvtStopWatching);
-				WaitForSingleObject(hWatchingThread, INFINITE);
-			}
-
-			// Load the file
 			{
+				// parse the parameters (tex file name and dependencies)
 				CSimpleGlob *npglob = new CSimpleGlob(uiFlags);
-
 				if (SG_SUCCESS != npglob->Add(args.FileCount(), args.Files()) ) {
 					cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-					continue;
 				}
-				if( args.FileCount() == 0 ){
+				else if( args.FileCount() == 0 ){
 					cout << fgErr << _T("No input file specified!\n" << fgNormal);
-					continue;
-				}
-				int ret = loadfile(*npglob, Rest);
-				if( (ret == 0) && Watch ) {
-					if( pglob )
-						delete pglob;
-					pglob = npglob;
-					// Start the watching thread
-					createWatchingThread();
+				}					
+				// Load the file
+				else if( loadfile(npglob, Rest) == 0 ) {
+					// Restart the watching thread
+					if( Watch ) {
+						// stop it first if already started
+						if( hWatchingThread ) {
+							SetEvent(hEvtStopWatching);
+							WaitForSingleObject(hWatchingThread, INFINITE);
+						}
+						createWatchingThread();
+					}
 				}
 			}
+
 			break;
 		case OPT_COMPILE:
 			{
@@ -576,7 +573,7 @@ void WINAPI CommandPromptThread( void *param )
 			break;
 		case OPT_FULLCOMPILE:
 			{
-				bool started = !RestartMakeThread(FullCompile);
+				bool started = RestartMakeThread(FullCompile);
 				// wait for the "make" thread to end
 				if( started )
 					WaitForSingleObject(hMakeThread, INFINITE);
@@ -619,7 +616,7 @@ int _tmain(int argc, TCHAR *argv[])
 {
 	SetTitle("prompt");
 
-	cout << endl << APP_NAME << " " << VERSION << " by William Blum, " VERSION_DATE << endl << endl;;
+	cout << endl << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
 
     unsigned int uiFlags = 0;
 
@@ -672,19 +669,19 @@ int _tmain(int argc, TCHAR *argv[])
 	InitializeCriticalSection(&cs);
 
 		int ret = -1;
-		pglob = new CSimpleGlob(uiFlags);
+		CSimpleGlob *nglob = new CSimpleGlob(uiFlags);
 		if( args.FileCount() == 0 ){
 			cout << fgWarning << _T("No input file specified.\n") << fgNormal;
 		}
 		else {
-			if (SG_SUCCESS != pglob->Add(args.FileCount(), args.Files()) ) {
+			if (SG_SUCCESS != nglob->Add(args.FileCount(), args.Files()) ) {
 				cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
 				return 1;
 			}
-			ret = loadfile(*pglob, initialjob);
+			ret = loadfile(nglob, initialjob);
 		}
 
-		if( Watch ) { // If watch has been requested by the user
+		if( Watch ) { // If watching has been requested by the user
 			// if some correct file was given as a command line parameter 
 			if( ret == 0 )				
 				createWatchingThread(); // then start watching
@@ -705,9 +702,9 @@ int _tmain(int argc, TCHAR *argv[])
 
 // Load the .tex file specified in the first argument of args, the remainings arguements are
 // the dependencies of the .tex file.
-int loadfile( CSimpleGlob &glob, JOB initialjob )
+int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 {
-	cout << "-Main file: '" << glob.File(0) << "'\n";
+	cout << "-Main file: '" << pnewglob->File(0) << "'\n";
 
 	TCHAR drive[4];
 	TCHAR mainfile[_MAX_FNAME];
@@ -715,7 +712,7 @@ int loadfile( CSimpleGlob &glob, JOB initialjob )
 	TCHAR fullpath[_MAX_PATH];
 	TCHAR dir[_MAX_DIR];
 
-	_fullpath( fullpath, glob.File(0), _MAX_PATH );
+	_fullpath( fullpath, pnewglob->File(0), _MAX_PATH );
 	_tsplitpath( fullpath, drive, dir, mainfile, ext );
 
 	// set the global variables
@@ -732,18 +729,21 @@ int loadfile( CSimpleGlob &glob, JOB initialjob )
 
 	if(  _tcsncmp(ext, ".tex", 4) )	{
 		cerr << fgErr << "Error: the file has not the .tex extension!\n\n" << fgNormal;
+		delete pnewglob;
 		return 1;
 	}
-	if( glob.FileCount()>1 ) {
+	if( pnewglob->FileCount()>1 ) {
 		cout << "-Dependencies:\n";
-		for (int n = 1; n < glob.FileCount(); ++n)
-			_tprintf(_T("  %2d: '%s'\n"), n, glob.File(n));
+		for (int n = 1; n < pnewglob->FileCount(); ++n)
+			_tprintf(_T("  %2d: '%s'\n"), n, pnewglob->File(n));
 	}
 	else
 		cout << "-No dependency.\n";
 		
-	if(glob.FileCount() == 0)
+	if(pnewglob->FileCount() == 0) {
+		delete pnewglob;
 		return 1;
+	}
 
 	// change current directory
 	_chdir(texdir.c_str());
@@ -797,11 +797,12 @@ int loadfile( CSimpleGlob &glob, JOB initialjob )
 
 			// check if a dependency file has been modified since the creation of the dvi file
 			bool dependency_fresher = false;
-			for(int i=1; !dependency_fresher && i<glob.FileCount(); i++)
-				dependency_fresher = SRC_FRESHER == compare_timestamp(glob.File(i), (texbasename+output_ext).c_str()) ;
+			for(int i=1; !dependency_fresher && i<pnewglob->FileCount(); i++)
+				dependency_fresher = SRC_FRESHER == compare_timestamp(pnewglob->File(i), (texbasename+output_ext).c_str()) ;
 
 			if ( maintex_comp & ERR_SRCABSENT ) {
 				cout << fgErr << "File " << mainfile << ".tex not found!\n" << fgNormal;
+				delete pnewglob;
 				return 2;
 			}
 			else if ( maintex_comp & ERR_OUTABSENT ) {
@@ -817,6 +818,11 @@ int loadfile( CSimpleGlob &glob, JOB initialjob )
 			//   there is no need to recompile.
 		}
 	}
+	
+	// replace the current active file
+	if( pglob )
+		delete pglob;
+	pglob = pnewglob;
 
 	return 0;
 }
