@@ -82,14 +82,14 @@ void WINAPI WatchingThread( void *param );
 // TODO: move the following function to a proper class. After all this is a C++ file!
 int loadfile( CSimpleGlob &glob, JOB initialjob );
 void RestartMakeThread(JOB makejob);
-bool fullcompile();
-bool compile();
-bool dvips();
-bool ps2pdf();
-bool bibtex();
-bool edit();
-bool view();
-bool openfolder();
+int fullcompile();
+int compile();
+int dvips();
+int ps2pdf();
+int bibtex();
+int edit();
+int view();
+int openfolder();
 
 
 //////////
@@ -122,6 +122,7 @@ HANDLE hEvtAbortMake = NULL;
 // Fire this event to request the watching thread to abort
 HANDLE hEvtStopWatching = NULL;
 
+
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
 
@@ -133,6 +134,10 @@ string preamble_basename = "";
 string texdir = "";
 string texfullpath = "";
 string texbasename = "";
+
+// name of the backup file for the .aux file
+string auxbackupname = "";
+
 
 // This glob object contains the list of dependencies
 CSimpleGlob *pglob = NULL;
@@ -346,24 +351,26 @@ void ExecuteOptionWatch( string optionarg )
 }
 
 // perform the necessary compilation
-void make(JOB makejob)
+int make(JOB makejob)
 {
-	if( makejob != Rest ) {
-		bool bCompOk = true;
-		if( makejob == Compile ) {
-			SetTitle("recompiling...");
-			bCompOk = compile();
-		}
-		else if ( makejob == FullCompile ) {
-			SetTitle("recompiling...");
-			bCompOk = fullcompile();
-		}
-		if( bCompOk && afterjob == Dvips ) {
-			dvips();
-		}
+	int ret;
 
-		SetTitle(bCompOk ? "monitoring" : "(errors) monitoring");
+	if( makejob == Rest )
+		return 0;
+	else if( makejob == Compile ) {
+		SetTitle("recompiling...");
+		ret = compile();
 	}
+	else if ( makejob == FullCompile ) {
+		SetTitle("recompiling...");
+		ret = fullcompile();
+	}
+	if( (ret==0) && afterjob == Dvips ) {
+		ret = dvips();
+	}
+
+	SetTitle( ret ? "(errors) monitoring" : "monitoring" );
+	return ret;
 }
 
 // thread responsible of launching the external commands (latex) for compilation
@@ -374,8 +381,22 @@ void WINAPI MakeThread( void *param )
 	//////////////
 	// perform the necessary compilations
 	MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
-	make(p->makejob);
 
+	if( p->makejob == Compile ) {
+		// Make a copy of the .aux file (in case the latex compilation aborts and destroy the .aux file)
+		CopyFile((texdir+texbasename+".aux").c_str(), (texdir+auxbackupname).c_str(), FALSE);
+	}
+
+	int errcode = make(p->makejob);
+
+	if( p->makejob == Compile && errcode == -1) {
+		// Restore the backup of the .aux file
+		CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+".aux").c_str(), FALSE);
+
+	}
+			EnterCriticalSection( &cs );
+			cout << flush << fgPrompt << PROMPT_STRING;
+			LeaveCriticalSection( &cs );
 	free(p);
 	hMakeThread = NULL;
 }
@@ -542,11 +563,13 @@ void WINAPI CommandPromptThread( void *param )
 			RestartMakeThread(Compile);
 			// wait for the "make" thread to end
 			WaitForSingleObject(hMakeThread, INFINITE);
+			printprompt = false;
 			break;
 		case OPT_FULLCOMPILE:
 			RestartMakeThread(FullCompile);
 			// wait for the "make" thread to end
 			WaitForSingleObject(hMakeThread, INFINITE);
+			printprompt = false;
 			break;
 		case OPT_QUIT:
 			wantsmore = false;
@@ -661,7 +684,8 @@ int _tmain(int argc, TCHAR *argv[])
 	
 	if(pglob)
 		delete pglob;
-
+	
+	DeleteCriticalSection(&cs);
 	CloseHandle(hEvtAbortMake);
 	CloseHandle(hEvtStopWatching);
 	return ret;
@@ -687,6 +711,8 @@ int loadfile( CSimpleGlob &glob, JOB initialjob )
 	texfullpath = fullpath;
 	texdir = string(drive) + dir;
 	texbasename = mainfile;
+	auxbackupname = texbasename+".aux.bak";
+
 
 	// set console title
 	SetTitle("Initialization");
@@ -877,10 +903,10 @@ bool CheckFileLoaded()
 }
 
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
-bool fullcompile()
+int fullcompile()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	// Check that external preamble exists
 	if( UseExternalPreamble ) {
@@ -889,15 +915,16 @@ bool fullcompile()
 		cout << fgMsg << "-- Creation of the format file...\n";
 		cout << "[running '" << cmdline << "']\n" << fgLatex;
 		LeaveCriticalSection( &cs ); 
-		if( launch(cmdline.c_str()) )
-			return false;
+		int ret = launch(cmdline.c_str());
+		if( ret )
+			return ret;
 	}
 	return compile();
 }
 
 
 // Compile the final tex file using the precompiled preamble
-bool compile()
+int compile()
 {
 	if( !CheckFileLoaded() )
 		return false;
@@ -927,118 +954,119 @@ bool compile()
 		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
 	}
     LeaveCriticalSection( &cs ); 
-	return 0==launch(cmdline.c_str());
+	return launch(cmdline.c_str());
 }
 
 // Convert the postscript file to pdf
-bool ps2pdf()
+int ps2pdf()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
 	string cmdline = string("ps2pdf ")+texbasename+".ps";
 	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return 0==launch(cmdline.c_str());
+	return launch(cmdline.c_str());
 }
 
 // Edit the .tex file
-bool edit()
+int edit()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
     LeaveCriticalSection( &cs ); 
-	HINSTANCE ret = ShellExecute(NULL, _T("open"),
+	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
 		_T(texfullpath.c_str()),
 		NULL,
 		texdir.c_str(),
 		SW_SHOWNORMAL);
-	return (int)ret>32;
+	return ret>32 ? 0 : ret;
 }
 
 // View the output file
-bool view()
+int view()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- view " << texbasename << output_ext << "...\n";
     LeaveCriticalSection( &cs ); 
-	HINSTANCE ret = ShellExecute(NULL, _T("open"),
+	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
 		_T((texdir+texbasename+output_ext).c_str()),
 		NULL,
 		texdir.c_str(),
 		SW_SHOWNORMAL);
-	return (int)ret>32;
+	return ret>32 ? 0 : ret;
 }
 
 // Open the folder containing the .tex file
-bool openfolder()
+int openfolder()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- open directory " << texdir << " ...\n";
     LeaveCriticalSection( &cs ); 
-	HINSTANCE ret = ShellExecute(NULL, NULL,
+	int ret = (int)(HINSTANCE)ShellExecute(NULL, NULL,
 		_T(texdir.c_str()),
 		NULL,
 		NULL,
 		SW_SHOWNORMAL);
-	return (int)ret>32;
+	return ret>32 ? 0 : ret;
 }
 
 
 // Convert the dvi file to postscript using dvips
-bool dvips()
+int dvips()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Converting " << texbasename << ".dvi to postscript...\n";
 	string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
 	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return 0==launch(cmdline.c_str());
+	return launch(cmdline.c_str());
 }
 
 // Run bibtex on the tex file
-bool bibtex()
+int bibtex()
 {
 	if( !CheckFileLoaded() )
-		return false;
+		return 0;
 
 	EnterCriticalSection( &cs );
 	cout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
 	string cmdline = string("bibtex ")+texbasename;
 	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return 0==launch(cmdline.c_str());
+	return launch(cmdline.c_str());
 }
 
 
 // Restart the make thread
 void RestartMakeThread( JOB makejob ) {
-	if( makejob == Rest )
+	if( makejob == Rest || !CheckFileLoaded() ) {
+		EnterCriticalSection( &cs );
+		cout << fgPrompt << PROMPT_STRING;
+		LeaveCriticalSection( &cs );
 		return;
-
-	if( !CheckFileLoaded() )
-		return;
+	}
 
 	/// abort the current "make" thread if it is already started
 	if( hMakeThread ) {
 		SetEvent(hEvtAbortMake);
 		// wait for the "make" thread to end
 		WaitForSingleObject(hMakeThread, INFINITE);
-	}			
+	}
 
 	// Create a new "make" thread.
 	//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
@@ -1056,14 +1084,21 @@ void RestartMakeThread( JOB makejob ) {
 			&makethreadID);
 }
 
-// Return true if an external program is potentially being executed
-bool IsExecutingExternal()
+
+void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
 {
-	return ExecutingExternalCommand;
-//	return hMakeThread!=0;
+	if( TryEnterCriticalSection(&cs) ){
+		// do not print things if an external program is running				
+		if(!hMakeThread && !ExecutingExternalCommand ) { 			
+			//JadedHoboConsole::console.SetColor( color, JadedHoboConsole::bgMask );
+			cout << color << str;
+		}
+		LeaveCriticalSection(&cs);
+	}
 }
 
 
+// Thread responsible of watching the directory and launching compilation when a change is detected
 void WINAPI WatchingThread( void *param )
 {
 	if( !pglob )
@@ -1145,9 +1180,6 @@ void WINAPI WatchingThread( void *param )
 				break;
 			}
 
-		//EnterCriticalSection( &cs );
-		//cout << "                         \r";
-
 		//////////////
 		// Check if some source file has changed and prepare the compilation requirement accordingly
 		JOB makejob = Rest;
@@ -1159,7 +1191,7 @@ void WINAPI WatchingThread( void *param )
 			wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
 
 			if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
-				if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" touched\n" ;
+				print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" touched\n" );
 			}
 			else
 			{
@@ -1169,11 +1201,11 @@ void WINAPI WatchingThread( void *param )
 					// has the digest changed?
 					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
  						dg_tex = dg_new;
-						if(!IsExecutingExternal()) cout << fgDepFile << "+ " << maintexfilename << " changed\n";
+						print_if_possible(fgDepFile, string("+ ") + maintexfilename + " changed\n" );
 						makejob = max(Compile, makejob);
 					}
 					else {
-						if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+						print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
 					}
 				}
 				// modification of the bibtex file?
@@ -1181,11 +1213,11 @@ void WINAPI WatchingThread( void *param )
 					// has the digest changed?
 					if( dg_new.DigestFile(filename) && (dg_bbl != dg_new) ) {
  						dg_bbl = dg_new;
-						if(!IsExecutingExternal()) cout << fgDepFile << "+ " << filename << "(bibtex) changed\n";
+						print_if_possible(fgDepFile, string("+ ") + filename + "(bibtex) changed\n" );
 						makejob = max(Compile, makejob);
 					}
 					else {
-						if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+						print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
 					}
 				}
 				
@@ -1193,11 +1225,11 @@ void WINAPI WatchingThread( void *param )
 				else if( UseExternalPreamble && !_tcscmp(filename,preamble_filename.c_str())  ) {
 					if( dg_new.DigestFile(preamble_filename.c_str()) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
-						if(!IsExecutingExternal()) cout << fgDepFile << "+ \"" << preamble_filename << "\" changed (preamble file).\n";
+						print_if_possible(fgDepFile, string(".\"") + filename + "\" changed (preamble file).\n" );
 						makejob = max(FullCompile, makejob);
 					}
 					else {
-						if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+						print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
 					}
 				}
 				
@@ -1211,16 +1243,16 @@ void WINAPI WatchingThread( void *param )
 					if( i<pglob->FileCount() ) {
 						if ( dg_new.DigestFile(pglob->File(i)) && (dg_deps[i]!=dg_new) ) {
 							dg_deps[i] = dg_new;
-							if(!IsExecutingExternal()) cout << fgDepFile << "+ \"" << pglob->File(i) << "\" changed (dependency file).\n";
+							print_if_possible(fgDepFile, string("+ \"") + pglob->File(i) + "\" changed (dependency file).\n" );
 							makejob = max(Compile, makejob);
 						}
 						else {
-							if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" modified but digest preserved\n" ;
+							print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
 						}
 					}
 					// not a revelant file ...				
 					else {
-						if(!IsExecutingExternal()) cout << fgIgnoredfile << ".\"" << filename << "\" modified\n";
+						print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified\n" );
 					}
 				}
 			}
@@ -1228,13 +1260,12 @@ void WINAPI WatchingThread( void *param )
 			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
 		}
 		while( pFileNotify->NextEntryOffset );
-		//LeaveCriticalSection( &cs ); 
+	
+		if( makejob != Rest )
+			RestartMakeThread(makejob);
 
-		RestartMakeThread(makejob);
+		//print_if_possible(fgMsg, "-- waiting for changes...\r" );
 
-		/*EnterCriticalSection( &cs );
-		if(!IsExecutingExternal()) cout << fgMsg << "-- waiting for changes...\r";
-		LeaveCriticalSection( &cs ); */
 
 	}
 
