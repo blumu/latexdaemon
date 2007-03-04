@@ -1,9 +1,9 @@
 // By william blum (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"3 March 2007"
+#define VERSION_DATE	"4 March 2007"
 #define VERSION			0.9
-#define BUILD			005
+#define BUILD			006
 
 // See changelog.html for the list of changes:.
 
@@ -262,11 +262,11 @@ void ShowUsage(TCHAR *progname) {
 		 << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
 		 << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
 	     << "INSTRUCTIONS:" << endl
-	     << "  1. Move the preamble from your .tex file to a new file named mainfile.pre" << endl 
-	     << "  and insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file," << endl << endl
-	     << "  2. start the daemon with the command \"latexdaemon mainfile.tex *.tex\" " << 
-		    "(or \"latexdaemon -ini pdflatex mainfile.tex *.tex\" if you want to use pdflatex"<<
-			"instead of latex) where main.tex is the main file of your latex project. "  << endl;
+		 << "Suppose main.tex is the main file of your Latex document then:" << endl
+	     << "  1. move the preamble from main.tex to a new file named mainfile.pre" << endl 
+	     << "  2. insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
+	     << "  3. start the daemon with the command \"latexdaemon main.tex *.tex\" " << 
+		    "(if you use pdflatex then add the option \"-ini=pdflatex\")" << endl << endl;
 }
 
 // update the title of the console
