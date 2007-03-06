@@ -1,3 +1,20 @@
+<p class="date"> 6 Mar 2007 - Version 0.9 Build 7 </p>
+<ul>
+	<li>Several bugs fixed.</li>
+	<li>New commands at the prompt: 'vs' to view the postscript file, 'vf' to view the pdf, 'vd' for the .dvi.</li>
+	<li>
+		<b>New</b> command line option: -gsview. In that mode, the .ps and .pdf viewer is forced to be gsview32 (even if the Windows 
+		file association says differently). The path to gsview
+		is determined by fetching the default value of the key 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\gsview32.exe' from
+		the Registry. The advantage of using gsview over Adobe Reader is that gsview does not lock the file therefore the editor can be kept
+		open during recompilation of the .tex file. Moreover, LatexDaemon sends notification message to GSWin32 to force a refresh
+		of the page as soon as it finishes the conversion from .dvi to .ps (this can be automated with the -afeterjob option).
+		Consequently, you don't need to click on the Ghostview window to see the effect of your changes. This greatly improves
+		the speed of the Latex edit-compile-view cycle.
+		
+	</li>
+</ul>
+
 <p class="date"> 3 Mar 2007 - Version 0.9 Build 5 </p>
 <ul>
 	<li>Add the @ symbol at the prompt to tell that the watching thread is currently running.</li>

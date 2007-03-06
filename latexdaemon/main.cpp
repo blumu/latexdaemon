@@ -1,9 +1,9 @@
-// By william blum (http://william.famille-blum.org/software/index.html)
+// Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"4 March 2007"
+#define VERSION_DATE	"6 March 2007"
 #define VERSION			0.9
-#define BUILD			006
+#define BUILD			007
 
 // See changelog.html for the list of changes:.
 
@@ -60,6 +60,7 @@ using namespace std;
 #define PROMPT_STRING					"dameon>"
 #define PROMPT_STRING_WATCH				"dameon@>"
 
+
 // Maximal length of an input command line at the prompt
 #define PROMPT_MAX_INPUT_LENGTH			2*_MAX_PATH
 
@@ -77,11 +78,13 @@ enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 //////////
 /// Prototypes
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
-DWORD launch(LPCTSTR cmdline);
+DWORD launch_and_wait(LPCTSTR cmdline);
 void createWatchingThread();
 void WINAPI CommandPromptThread( void *param );
 void WINAPI WatchingThread( void *param );
 void WINAPI MakeThread( void *param );
+
+BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam);
 
 // TODO: move the following function to a proper class. After all this is a C++ file!
 int loadfile( CSimpleGlob *pnglob, JOB initialjob );
@@ -93,6 +96,9 @@ int ps2pdf();
 int bibtex();
 int edit();
 int view();
+int view_dvi();
+int view_ps();
+int view_pdf();
 int openfolder();
 
 
@@ -102,10 +108,13 @@ int openfolder();
 // critical section for handling printf across the different threads
 CRITICAL_SECTION cs;
 
-// is the preamble stored in an external file? (this option can be changed with a command line parameter)
-bool UseExternalPreamble = true;
+// set to true by default, can be overwritten by a command line switch
+bool LookForExternalPreamble = true;
 
-// Set to true when an external command is running (function launch())
+// is there an external preamble file for the currently openend .tex file?
+bool ExternalPreamblePresent = true;
+
+// Set to true when an external command is running (function launch_and_wait())
 bool ExecutingExternalCommand = false;
 
 // watch for file changes ?
@@ -126,6 +135,19 @@ HANDLE hEvtAbortMake = NULL;
 // Fire this event to request the watching thread to abort
 HANDLE hEvtStopWatching = NULL;
 
+// Reg key where to find the path to gswin32
+#define REG_KEY_GWIN32PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
+
+// path to gsview32.exe
+string gsview32 = "c:\\program files\\ghostgum\\gsview\\gsview32.exe";
+
+// by default, gswin32 is not used as a viewer: the program associated with the output file will be used (adobe reader, gsview, ...)
+bool UseGswin32 = false;
+
+// process/thread id of the last launched gsview32.exe
+PROCESS_INFORMATION piGsview32 = {NULL, NULL};
+// handle of the main window of gsview32
+HWND hwndGsview32 = NULL;
 
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
@@ -166,7 +188,8 @@ enum {
 	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
 	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, 
-	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD
+	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, 
+	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW
 };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
@@ -195,6 +218,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_WATCH,		_T("--watch"),		SO_REQ_CMB },
     { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
     { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
+    { OPT_GSVIEW,		_T("--gsview"),		SO_NONE },
+    { OPT_GSVIEW,		_T("-gsview"),		SO_NONE },	
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -225,6 +250,12 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 	{ OPT_EDIT,			_T("-edit"),		SO_NONE		},
 	{ OPT_VIEWOUTPUT,	_T("-v"),			SO_NONE		},
 	{ OPT_VIEWOUTPUT,	_T("-view"),		SO_NONE		},
+	{ OPT_VIEWDVI,		_T("-vd"),			SO_NONE		},
+	{ OPT_VIEWDVI,		_T("-viewdvi"),		SO_NONE		},
+	{ OPT_VIEWPS,		_T("-vs"),			SO_NONE		},
+	{ OPT_VIEWPS,		_T("-viewps"),		SO_NONE		},
+	{ OPT_VIEWPDF,		_T("-vf"),			SO_NONE		},
+	{ OPT_VIEWPDF,		_T("-viewpdf"),		SO_NONE		},
 	{ OPT_OPENFOLDER,	_T("-o"),			SO_NONE		},
 	{ OPT_OPENFOLDER,	_T("-open"),		SO_NONE		},
 	{ OPT_LOAD,			_T("-l"),			SO_NONE		},
@@ -250,6 +281,8 @@ void ShowUsage(TCHAR *progname) {
 		 << " --force {compile|fullcompile}" << endl
 		 << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
 		 << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
+		 << " --gsview " << endl 
+		 << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl << endl
 		 << " --ini=inifile" << endl 
 		 << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
 		 << " --afterjob={dvips|rest}" << endl 
@@ -257,7 +290,7 @@ void ShowUsage(TCHAR *progname) {
 		 << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
 		 << " --preamble={none|external}" << endl 
 		 << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
-		 << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used the precompilation feature will be automatically desactivated."<<endl
+		 << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically desactivated."<<endl
 		 << "   . 'external' (default) specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exist it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
 		 << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
 		 << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
@@ -292,11 +325,10 @@ void ExecuteOptionIni( string optionarg )
 void ExecuteOptionPreamble( string optionarg )
 {
 	EnterCriticalSection( &cs );
-	UseExternalPreamble = (optionarg=="none") ? true : false ;
-	if( UseExternalPreamble )
-		cout << "-Use external preamble." << endl;
+	LookForExternalPreamble = (optionarg=="none") ? true : false ;
+	if( LookForExternalPreamble )
+		cout << "-Look for external preamble at load time." << endl;
 	else
-		cout << "-No preamble." << endl;
 	LeaveCriticalSection( &cs );
 }
 
@@ -312,6 +344,15 @@ void ExecuteOptionForce( string optionarg, JOB &force )
 		force = Compile;
 		cout << "-Initial compilation forced." << endl;
 	}
+	LeaveCriticalSection( &cs );
+}
+
+// code for the -gsview option
+void ExecuteOptionGsview()
+{
+	UseGswin32 = true;
+	EnterCriticalSection( &cs );
+	cout << "-Viewer set to GhostView." << endl;
 	LeaveCriticalSection( &cs );
 }
 
@@ -369,8 +410,19 @@ int make(JOB makejob)
 		SetTitle("recompiling...");
 		ret = fullcompile();
 	}
-	if( (ret==0) && afterjob == Dvips ) {
-		ret = dvips();
+	if( ret==0 ) {
+		if( afterjob == Dvips )
+			ret = dvips();
+		
+		// has gswin32 been launched?
+		if( piGsview32.dwProcessId ) {
+			// look for the gswin32 window
+			if( !hwndGsview32 )
+				EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
+			// refresh the gsview32 window 
+			if( hwndGsview32 )
+				PostMessage(hwndGsview32, WM_KEYDOWN, VK_F5, 0xC03F0001);
+		}
 	}
 
 	SetTitle( ret ? "(errors) monitoring" : "monitoring" );
@@ -514,10 +566,12 @@ void WINAPI CommandPromptThread( void *param )
 				 << "  p[s2pdf]        to convert the .ps file to pdf" << endl
 				 << "  q[uit]          to quit the program" << endl 
 				 << "  u[sage]         to show the help on command line parameters usage" << endl
-				 << "  v[iew]          to view the output file (dvi or pdf depending on the ini file)" << endl << endl
+				 << "  v[iew]          to view the output file (dvi or pdf depending on ini value)" << endl				 << "  vd|viewdvi      to view the pdf file output" << endl 
+				 << "  vs|viewps      to view the pdf file output" << endl 
+				 << "  vf|viewpdf      to view the pdf file output" << endl << endl
 				 << "You can also configure variables with:" << endl
 				 << "  ini=inifile               set the initial format file to inifile" << endl
-				 << "  preamble={none,external}  set the preamble mode" << endl
+				 << "  preamble={none,external}  set the preamble mode for the file to be loaded" << endl
 				 << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
 				 << "  watch={yes,no}            to activate/desactive file modification watching" << endl << endl;
 			LeaveCriticalSection( &cs ); 
@@ -531,6 +585,9 @@ void WINAPI CommandPromptThread( void *param )
 		case OPT_PS2PDF:		ps2pdf();		break;
 		case OPT_EDIT:			edit();			break;
 		case OPT_VIEWOUTPUT:	view();			break;
+		case OPT_VIEWDVI:		view_dvi();		break;
+		case OPT_VIEWPS:		view_ps();		break;
+		case OPT_VIEWPDF:		view_pdf();		break;
 		case OPT_OPENFOLDER:	openfolder();	break;		
 
 		case OPT_LOAD:
@@ -618,11 +675,28 @@ int _tmain(int argc, TCHAR *argv[])
 
 	cout << endl << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
 
-    unsigned int uiFlags = 0;
+	// look for gsview32
+	HKEY hkey;
+	if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_KEY_GWIN32PATH, 0, KEY_QUERY_VALUE, &hkey) ) {	
+		TCHAR buff[_MAX_PATH];
+		DWORD size = _MAX_PATH;
+		RegQueryValueEx(hkey,NULL,NULL,NULL,(LPBYTE)buff,&size);
+		RegCloseKey(hkey);
+		gsview32 = buff;
+	}
+
+	// create the event used to abort the "make" thread
+	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
+	// create the event used to abort the "watching" thread
+	hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
+	// initialize the critical section used to sequentialized console output
+	InitializeCriticalSection(&cs);
+
 
 	// default options, can be overwritten by command line parameters
 	JOB initialjob = Rest;
 
+	unsigned int uiFlags = 0;
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
         if (args.LastError() != SO_SUCCESS) {
@@ -650,23 +724,18 @@ int _tmain(int argc, TCHAR *argv[])
         }
 
 		switch( args.OptionId() ) {
-			case OPT_USAGE:         ShowUsage(NULL);							return 0;
+			case OPT_USAGE:         ShowUsage(NULL);							goto exit;
 			case OPT_INI:			ExecuteOptionIni(args.OptionArg());			break;
 			case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg()); 		break;
 			case OPT_FORCE:			ExecuteOptionForce(args.OptionArg(),initialjob); break;
+			case OPT_GSVIEW:        ExecuteOptionGsview(); break;
 			case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());	break;
 			case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());	break;
 			default:				break;
 		}
         uiFlags |= (unsigned int) args.OptionId();
     }
-	
-	// create the event used to abort the "make" thread
-	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
-	// create the event used to abort the "watching" thread
-	hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
-	// initialize the critical section used to sequentialized console output
-	InitializeCriticalSection(&cs);
+
 
 		int ret = -1;
 		CSimpleGlob *nglob = new CSimpleGlob(uiFlags);
@@ -676,7 +745,7 @@ int _tmain(int argc, TCHAR *argv[])
 		else {
 			if (SG_SUCCESS != nglob->Add(args.FileCount(), args.Files()) ) {
 				cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
-				return 1;
+				goto exit;
 			}
 			ret = loadfile(nglob, initialjob);
 		}
@@ -692,7 +761,7 @@ int _tmain(int argc, TCHAR *argv[])
 	
 	if(pglob)
 		delete pglob;
-	
+exit:	
 	DeleteCriticalSection(&cs);
 	CloseHandle(hEvtAbortMake);
 	CloseHandle(hEvtStopWatching);
@@ -751,25 +820,25 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 	int res; // will contain the result of the comparison of the timestamp of the preamble file with the format file
 
 	// check for the presence of the external preamble file
-	if( UseExternalPreamble ) {
+	if( LookForExternalPreamble ) {
 		// compare the timestamp of the preamble.tex file and the format file
 		preamble_filename = string(mainfile) + "." DEFAULTPREAMBLE1_EXT;
 		preamble_basename = string(mainfile);
 		res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
-		UseExternalPreamble = !(res & ERR_SRCABSENT);
-		if ( !UseExternalPreamble ) {
+		ExternalPreamblePresent = !(res & ERR_SRCABSENT);
+		if ( !ExternalPreamblePresent ) {
 			// try with the second default preamble name
 			preamble_filename = DEFAULTPREAMBLE2_FILENAME;
 			preamble_basename = DEFAULTPREAMBLE2_BASENAME;
 			res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
-			UseExternalPreamble = !(res & ERR_SRCABSENT);
-			if ( !UseExternalPreamble ) {
+			ExternalPreamblePresent = !(res & ERR_SRCABSENT);
+			if ( !ExternalPreamblePresent ) {
 				cout << fgWarning << "Warning: Preamble file not found! (I have tried " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode desactivated!\n";
 			}
 		}
 	}
 
-	if( UseExternalPreamble )
+	if( ExternalPreamblePresent )
 		cout << "-Preamble file: " << preamble_filename << "\n";
 
 	if( initialjob != Rest ) {
@@ -779,7 +848,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 	else {
 		// The external preamble file is used and the format file does not exist or has a timestamp
 		// older than the preamble file : then recreate the format file and recompile the .tex file.
-		if( UseExternalPreamble && ((res == SRC_FRESHER) || (res & ERR_OUTABSENT)) ) {
+		if( ExternalPreamblePresent && ((res == SRC_FRESHER) || (res & ERR_OUTABSENT)) ) {
 			if( res == SRC_FRESHER ) {
 				 cout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
 				 cout << fgMsg << "  Let's recreate the format file and recompile " << texbasename << ".tex.\n";
@@ -845,8 +914,9 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 
 
 
-// Launch an external program
-DWORD launch(LPCTSTR cmdline)
+// Launch an external program and wait for its termination or for an abortion (set with the 
+// hEvtAbortMake event)
+DWORD launch_and_wait(LPCTSTR cmdline)
 {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
@@ -876,6 +946,8 @@ DWORD launch(LPCTSTR cmdline)
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
 		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
+		ExecutingExternalCommand = false;
+		LeaveCriticalSection( &cs ); 
 		return -1;
 	}
 	free(szCmdline);
@@ -926,13 +998,13 @@ int fullcompile()
 		return 0;
 
 	// Check that external preamble exists
-	if( UseExternalPreamble ) {
+	if( ExternalPreamblePresent ) {
 		EnterCriticalSection( &cs );
 		string cmdline = string("pdftex -interaction=nonstopmode --src-specials -ini \"&" + texinifile + "\" \"\\input ")+preamble_filename+" \\dump\\endinput \"";
 		cout << fgMsg << "-- Creation of the format file...\n";
 		cout << "[running '" << cmdline << "']\n" << fgLatex;
 		LeaveCriticalSection( &cs ); 
-		int ret = launch(cmdline.c_str());
+		int ret = launch_and_wait(cmdline.c_str());
 		if( ret )
 			return ret;
 	}
@@ -952,7 +1024,7 @@ int compile()
 	cout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
 
 	// External preamble used? Then compile using the precompiled preamble.
-	if( UseExternalPreamble ) {
+	if( ExternalPreamblePresent ) {
 		// Remark on the latex code included in the following command line:
 		//	 % Install a hook for the \input command ...
 		///  \let\TEXDAEMONinput\input
@@ -971,22 +1043,125 @@ int compile()
 		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
 	}
     LeaveCriticalSection( &cs ); 
-	return launch(cmdline.c_str());
+	return launch_and_wait(cmdline.c_str());
 }
 
-// Convert the postscript file to pdf
-int ps2pdf()
+
+
+BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam)
+{
+	DWORD pid;
+	TCHAR szClass[15];
+	GetWindowThreadProcessId(hwnd, &pid);
+	RealGetWindowClass(hwnd, szClass, sizeof(szClass));
+	if( _tcscmp(szClass, _T("gsview_class")) == 0 ) {
+		hwndGsview32 = FindWindowEx(hwnd, NULL, "gsview_img_class", NULL);
+	}
+	return TRUE;
+}
+
+// start gsview, 
+int start_gsview32(string filename)
+{
+	string cmdline = gsview32 + " " + filename;
+
+	STARTUPINFO si;
+	LPTSTR szCmdline= _tcsdup(cmdline.c_str());
+	ZeroMemory( &si, sizeof(si) );
+	si.cb = sizeof(si);
+	ZeroMemory( &piGsview32, sizeof(piGsview32) );
+	
+	// Start the child process. 
+	if( !CreateProcess( NULL,   // No module name (use command line)
+		szCmdline,      // Command line
+		NULL,           // Process handle not inheritable
+		NULL,           // Thread handle not inheritable
+		FALSE,          // Set handle inheritance to FALSE
+		0,
+		//CREATE_NEW_CONSOLE,              // No creation flags
+		NULL,           // Use parent's environment block
+		NULL,           // Use parent's starting directory 
+		&si,            // Pointer to STARTUPINFO structure
+		&piGsview32 )           // Pointer to PROCESS_INFORMATION structure
+	) {
+		EnterCriticalSection( &cs );
+		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
+		LeaveCriticalSection( &cs ); 
+		return -1;
+	}
+	else
+	{
+		EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
+	}
+	free(szCmdline);
+
+
+	return 0;
+}
+
+// open a file (located in the same directory as the .tex file) with the program associated with its extension in windows
+int shellfile_open(string filename)
+{
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- view " << filename << " ...\n";
+    LeaveCriticalSection( &cs ); 
+	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
+		_T((texdir+filename).c_str()),
+		NULL,
+		texdir.c_str(),
+		SW_SHOWNORMAL);
+	return ret>32 ? 0 : ret;
+}
+
+// View the .ps file
+int view_ps()
+{
+	if( !CheckFileLoaded() )
+		return 0;
+	
+	if( UseGswin32 )
+		return start_gsview32(texbasename+".ps");
+	else 
+		return shellfile_open(texbasename+".ps");
+
+}
+
+// View the output file
+int view()
+{
+	return ( output_ext == ".pdf" ) ? view_pdf() : view_dvi();
+}
+
+// View the .dvi file
+int view_dvi()
 {
 	if( !CheckFileLoaded() )
 		return 0;
 
+	string file=texbasename+".dvi";
 	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
-	string cmdline = string("ps2pdf ")+texbasename+".ps";
-	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+	cout << fgMsg << "-- view " << file << " ...\n";
     LeaveCriticalSection( &cs ); 
-	return launch(cmdline.c_str());
+	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
+		_T((texdir+file).c_str()),
+		NULL,
+		texdir.c_str(),
+		SW_SHOWNORMAL);
+	return ret>32 ? 0 : ret;
 }
+
+// View the .pdf file
+int view_pdf()
+{
+	if( !CheckFileLoaded() )
+		return 0;
+	
+	if( UseGswin32 )
+		return start_gsview32(texbasename+".pdf");
+	else 
+		return shellfile_open(texbasename+".pdf");
+}
+
 
 // Edit the .tex file
 int edit()
@@ -999,23 +1174,6 @@ int edit()
     LeaveCriticalSection( &cs ); 
 	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
 		_T(texfullpath.c_str()),
-		NULL,
-		texdir.c_str(),
-		SW_SHOWNORMAL);
-	return ret>32 ? 0 : ret;
-}
-
-// View the output file
-int view()
-{
-	if( !CheckFileLoaded() )
-		return 0;
-
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- view " << texbasename << output_ext << "...\n";
-    LeaveCriticalSection( &cs ); 
-	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-		_T((texdir+texbasename+output_ext).c_str()),
 		NULL,
 		texdir.c_str(),
 		SW_SHOWNORMAL);
@@ -1040,6 +1198,20 @@ int openfolder()
 }
 
 
+// Convert the postscript file to pdf
+int ps2pdf()
+{
+	if( !CheckFileLoaded() )
+		return 0;
+
+	EnterCriticalSection( &cs );
+	cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
+	string cmdline = string("ps2pdf ")+texbasename+".ps";
+	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    LeaveCriticalSection( &cs ); 
+	return launch_and_wait(cmdline.c_str());
+}
+
 // Convert the dvi file to postscript using dvips
 int dvips()
 {
@@ -1051,7 +1223,7 @@ int dvips()
 	string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
 	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch(cmdline.c_str());
+	return launch_and_wait(cmdline.c_str());
 }
 
 // Run bibtex on the tex file
@@ -1065,7 +1237,7 @@ int bibtex()
 	string cmdline = string("bibtex ")+texbasename;
 	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch(cmdline.c_str());
+	return launch_and_wait(cmdline.c_str());
 }
 
 
@@ -1143,7 +1315,7 @@ void WINAPI WatchingThread( void *param )
 	
 	// get the digest of the preamble file
 	md5 dg_preamble;
-	if( UseExternalPreamble && !dg_preamble.DigestFile(preamble_filename.c_str()) ) {
+	if( ExternalPreamblePresent && !dg_preamble.DigestFile(preamble_filename.c_str()) ) {
 		cerr << "File " << preamble_filename << " cannot be found or opened!\n" << fgLatex;
 		hWatchingThread = NULL;
 		return;
@@ -1244,7 +1416,7 @@ void WINAPI WatchingThread( void *param )
 				}
 				
 				// modification of the preamble file?
-				else if( UseExternalPreamble && !_tcscmp(filename,preamble_filename.c_str())  ) {
+				else if( ExternalPreamblePresent && !_tcscmp(filename,preamble_filename.c_str())  ) {
 					if( dg_new.DigestFile(preamble_filename.c_str()) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
 						print_if_possible(fgDepFile, string(".\"") + filename + "\" changed (preamble file).\n" );
