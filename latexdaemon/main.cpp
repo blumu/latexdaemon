@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"6 March 2007"
+#define VERSION_DATE	"28 March 2007"
 #define VERSION			0.9
-#define BUILD			007
+#define BUILD			"8"
 
 // See changelog.html for the list of changes:.
 
@@ -1091,6 +1091,7 @@ int start_gsview32(string filename)
 	}
 	else
 	{
+		hwndGsview32 = NULL;
 		EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
 	}
 	free(szCmdline);
