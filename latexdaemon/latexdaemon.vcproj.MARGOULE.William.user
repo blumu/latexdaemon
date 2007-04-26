@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-ini=pdflatex -gsview &quot;d:\documents\dphil\latex\bctcs2007\bctcs07-slides.tex&quot;"
+				CommandArguments="-watch=no -force compile"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"
@@ -39,7 +39,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-afterjob=dvips &quot;d:\documents\dphil\latex\safetynotes\compos.tex&quot;"
+				CommandArguments="-ini=pdflatex -gsview &quot;d:\documents\dphil\latex\bctcs2007\bctcs07-slides.tex&quot;"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"
