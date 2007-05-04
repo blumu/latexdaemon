@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"28 March 2007"
 #define VERSION			0.9
-#define BUILD			"8"
+#define BUILD			"9"
 
 // See changelog.html for the list of changes:.
 
@@ -325,10 +325,11 @@ void ExecuteOptionIni( string optionarg )
 void ExecuteOptionPreamble( string optionarg )
 {
 	EnterCriticalSection( &cs );
-	LookForExternalPreamble = (optionarg=="none") ? true : false ;
+	LookForExternalPreamble = (optionarg=="none") ? false : true ;
 	if( LookForExternalPreamble )
-		cout << "-Look for external preamble at load time." << endl;
+		cout << "-I will look for an external preamble file next time I load a .tex file." << endl;
 	else
+		cout << "-I will not look for an external preamble next time I load a .tex file." << endl;
 	LeaveCriticalSection( &cs );
 }
 
@@ -475,6 +476,25 @@ void createWatchingThread(){
 		&watchingthreadID);
 }
 
+BOOL CALLBACK FindConsoleEnumWndProc(HWND hwnd, LPARAM lparam)
+{
+	 DWORD dwProcessId = 0;
+	 GetWindowThreadProcessId(hwnd, &dwProcessId);
+	 if (dwProcessId == GetCurrentProcessId()) {
+		 *((HWND *)lparam) = hwnd;
+		 return 0;
+	 } else {
+		 return 1;
+	 }
+}
+
+HWND FindMyWindow(void)
+{
+	HWND hwndConsole = 0;
+	EnumWindows(FindConsoleEnumWndProc, (LPARAM)&hwndConsole);
+	return hwndConsole;
+}
+
 
 // thread responsible for parsing the commands send by the user.
 void WINAPI CommandPromptThread( void *param )
@@ -600,23 +620,61 @@ void WINAPI CommandPromptThread( void *param )
 				CSimpleGlob *npglob = new CSimpleGlob(uiFlags);
 				if (SG_SUCCESS != npglob->Add(args.FileCount(), args.Files()) ) {
 					cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-				}
-				else if( args.FileCount() == 0 ){
-					cout << fgErr << _T("No input file specified!\n" << fgNormal);
-				}					
-				// Load the file
-				else if( loadfile(npglob, Rest) == 0 ) {
-					// Restart the watching thread
-					if( Watch ) {
-						// stop it first if already started
-						if( hWatchingThread ) {
-							SetEvent(hEvtStopWatching);
-							WaitForSingleObject(hWatchingThread, INFINITE);
+				}				
+				else {
+					// if no argument is specified then we show a dialogbox to the user to let him select a file
+					if( args.FileCount() == 0 ){
+						OPENFILENAME ofn;       // common dialog box structure
+						char szFile[260];       // buffer for file name
+
+						// Initialize OPENFILENAME
+						ZeroMemory(&ofn, sizeof(ofn));
+						ofn.lStructSize = sizeof(ofn);
+						ofn.hwndOwner = FindMyWindow();
+						ofn.lpstrFile = szFile;
+						//
+						// Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
+						// use the contents of szFile to initialize itself.
+						//
+						ofn.lpstrFile[0] = '\0';
+						ofn.nMaxFile = sizeof(szFile);
+						ofn.lpstrFilter = "All(*.*)\0*.*\0Tex/Latex file (*.tex)\0*.tex\0";
+						ofn.nFilterIndex = 2;
+						ofn.lpstrFileTitle = NULL;
+						ofn.nMaxFileTitle = 0;
+						ofn.lpstrInitialDir = NULL;
+						ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+						// Display the Open dialog box. 
+
+						if (GetOpenFileName(&ofn)==TRUE) {
+							if (SG_SUCCESS != npglob->Add(szFile) ) {
+								cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+								goto err_load;
+							}
 						}
-						createWatchingThread();
+						else {
+							cout << fgErr << _T("No input file specified!\n" << fgNormal);
+							goto err_load;
+						}
+
+					}
+
+					// Load the file
+					if( loadfile(npglob, Rest) == 0 ) {
+						// Restart the watching thread
+						if( Watch ) {
+							// stop it first if already started
+							if( hWatchingThread ) {
+								SetEvent(hEvtStopWatching);
+								WaitForSingleObject(hWatchingThread, INFINITE);
+							}
+							createWatchingThread();
+						}
 					}
 				}
 			}
+err_load:
 
 			break;
 		case OPT_COMPILE:
@@ -837,6 +895,8 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 			}
 		}
 	}
+	else
+		ExternalPreamblePresent = false;
 
 	if( ExternalPreamblePresent )
 		cout << "-Preamble file: " << preamble_filename << "\n";
