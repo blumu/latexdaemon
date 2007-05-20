@@ -315,6 +315,7 @@ void SetTitle(string state)
 void ExecuteOptionIni( string optionarg )
 {
 	texinifile = optionarg;
+	SetTitle("monitoring");
 	cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
 	if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
 		output_ext = ".pdf";
