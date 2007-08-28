@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"28 March 2007"
+#define VERSION_DATE	"28 August 2007"
 #define VERSION			0.9
-#define BUILD			"9"
+#define BUILD			"10"
 
 // See changelog.html for the list of changes:.
 
@@ -1453,7 +1453,7 @@ void WINAPI WatchingThread( void *param )
 			{
 				md5 dg_new;
 				// modification of the tex file?
-				if( !_tcscmp(filename,maintexfilename.c_str()) ) {
+				if( !_tcsicmp(filename,maintexfilename.c_str()) ) {
 					// has the digest changed?
 					if( dg_new.DigestFile(maintexfilename.c_str()) && (dg_tex != dg_new) ) {
  						dg_tex = dg_new;
@@ -1465,7 +1465,7 @@ void WINAPI WatchingThread( void *param )
 					}
 				}
 				// modification of the bibtex file?
-				else if( !_tcscmp(filename,bblfilename.c_str()) ) {
+				else if( !_tcsicmp(filename,bblfilename.c_str()) ) {
 					// has the digest changed?
 					if( dg_new.DigestFile(filename) && (dg_bbl != dg_new) ) {
  						dg_bbl = dg_new;
@@ -1478,7 +1478,7 @@ void WINAPI WatchingThread( void *param )
 				}
 				
 				// modification of the preamble file?
-				else if( ExternalPreamblePresent && !_tcscmp(filename,preamble_filename.c_str())  ) {
+				else if( ExternalPreamblePresent && !_tcsicmp(filename,preamble_filename.c_str())  ) {
 					if( dg_new.DigestFile(preamble_filename.c_str()) && (dg_preamble!=dg_new) ) {
 						dg_preamble = dg_new;
 						print_if_possible(fgDepFile, string(".\"") + filename + "\" changed (preamble file).\n" );
@@ -1494,7 +1494,7 @@ void WINAPI WatchingThread( void *param )
 					// is it a dependency file?
 					int i;
 					for(i=1; i<pglob->FileCount(); i++)
-						if(!_tcscmp(filename,pglob->File(i))) break;
+						if(!_tcsicmp(filename,pglob->File(i))) break;
 
 					if( i<pglob->FileCount() ) {
 						if ( dg_new.DigestFile(pglob->File(i)) && (dg_deps[i]!=dg_new) ) {
