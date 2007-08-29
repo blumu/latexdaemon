@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-watch=no -force compile"
+				CommandArguments="d:\documents\dphil\latex\safetynotes\safeia.tex"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

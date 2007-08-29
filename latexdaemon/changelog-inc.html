@@ -1,7 +1,9 @@
-<p class="date"> ? ? 2007 - Version 0.9 Build 8 </p>
+<p class="date"> 29 August 2007 - Version 0.9 Build 10 </p>
 <ul>
-	<li>The command load used with no parameter shows up a dialog box that allows the user to choose the file to load.</li>
-	<li>Bug fixed when the option/command preamble is used.</li>
+	<li>The command 'load' used with no parameter shows up a dialog box that allows the user to choose which file to load.</li>
+	<li>Bug fixed when the 'preamble' command or parameter is used.</li>
+	<li>Internal filename comparisons are now performed case-insensitively to be compatible with FAT/NTFS conventions.</li>
+	<li>Bug fixed in the file monitoring loop: in particular cases, certain file modifications could be uncaught.</li>
 </ul>
 
 <p class="date"> 6 Mar 2007 - Version 0.9 Build 7 </p>
@@ -9,7 +11,7 @@
 	<li>Several bugs fixed.</li>
 	<li>New commands at the prompt: 'vs' to view the postscript file, 'vf' to view the pdf, 'vd' for the .dvi.</li>
 	<li>
-		<b>New</b> command line option: -gsview. In that mode, the .ps and .pdf viewer is forced to be gsview32 (even if the Windows 
+		<b>New</b> command line option: -gsview. In that mode, the .ps and .pdf viewer is forced to be gsview32 (even if the Windows
 		file association says differently). The path to gsview
 		is determined by fetching the default value of the key 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\gsview32.exe' from
 		the Registry. The advantage of using gsview over Adobe Reader is that gsview does not lock the file therefore the editor can be kept
@@ -27,7 +29,7 @@
 	<li>The watching thread can be started and stopped just by changing the value of the watch variable to yes or no.</li>
 	<li>The .aux file is now backed up before compilation and restored if the compilation has aborted.<br />		
 		Suppose for	instance that the user edits and saves the .tex file then the daemon will
-		detect the modification and runs latex. If the user saves once more before the first compilation has finished 
+		detect the modification and runs latex. If the user saves once more before the first compilation has finished
 		then, as in previous version, the daemon will abort the first compilation. However this operation corrupts
 		the .aux file since latex writes this file during the compilation. With the new version of the daemon, such situation will
 		be recovered by restoring the backup copy of the .aux file.
@@ -35,14 +37,14 @@
 	<li>The command line options -forcecompile and -forcefullcompile have merged into the command line option
 	    -force={compile,fullcompile}</li>
 	<li>Command line option -nowatch becomes -watch=no</li>
-	<li>New command line option -afterjob={rest|dvips} to specify a job to start after a successful 
+	<li>New command line option -afterjob={rest|dvips} to specify a job to start after a successful
 	compilation of the .tex file. There are just two possible values at the moment:
 		<ul>
 			<li>dvips : convert the dvi file to postscript,</li>
 			<li>rest: do nothing.</li>
 		</ul>
 	</li>
-	<li>New commands available at the prompt: 
+	<li>New commands available at the prompt:
         <ul>
 			<li>b[ibtex] to run bibtex on the .tex file</li>
 			<li>c[compile] to compile the .tex file using the precompiled preamble</li>
@@ -76,7 +78,7 @@
 </ul>
 <p class="date"> 28 feb 2007 - Version 0.9 Build 1 </p>
 <ul>
-        <li> When looking for the preamble file, it first searches for a file with the same base name as the tex file but with the .pre extension, if it does not exists it then looks for preamble.tex. This allows to have several main latex files in the same directory each of them having its own preamble file. 
+        <li> When looking for the preamble file, it first searches for a file with the same base name as the tex file but with the .pre extension, if it does not exists it then looks for preamble.tex. This allows to have several main latex files in the same directory each of them having its own preamble file.
         </li>
         <li>  change: option "-noextpreamble" now becomes "-preamble={none|external}:
         <ul>

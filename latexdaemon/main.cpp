@@ -1,7 +1,7 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"28 August 2007"
+#define VERSION_DATE	"29 August 2007"
 #define VERSION			0.9
 #define BUILD			"10"
 
@@ -582,7 +582,7 @@ void WINAPI CommandPromptThread( void *param )
 				 << "  e[dit]          to edit the .tex file" << endl
 				 << "  f[ullcompile]   to compile the preamble and the .tex file" << endl
 				 << "  h[elp]          to show this message" << endl
-				 << "  l[oad] file     to change the active .tex file" << endl
+				 << "  l[oad] file.tex to change the active .tex file" << endl
 				 << "  o[pen]          to open the folder containing the .tex file" << endl
 				 << "  p[s2pdf]        to convert the .ps file to pdf" << endl
 				 << "  q[uit]          to quit the program" << endl 
@@ -1405,8 +1405,7 @@ void WINAPI WatchingThread( void *param )
 	overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
 
 	while( 1 )
-	{
-		FILE_NOTIFY_INFORMATION *pFileNotify;
+	{		
 		DWORD BytesReturned;
 
 		ReadDirectoryChangesW(
@@ -1439,8 +1438,10 @@ void WINAPI WatchingThread( void *param )
 		//////////////
 		// Check if some source file has changed and prepare the compilation requirement accordingly
 		JOB makejob = Rest;
+		FILE_NOTIFY_INFORMATION *pFileNotify;
 		pFileNotify = (PFILE_NOTIFY_INFORMATION)&buffer;
-		do { 
+		while( pFileNotify )
+		{ 
 			// Convert the filename from unicode string to oem string
 			char filename[_MAX_FNAME];
 			pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
@@ -1511,11 +1512,14 @@ void WINAPI WatchingThread( void *param )
 						print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified\n" );
 					}
 				}
-			}
-
-			pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset);
+			}			
+			
+			// step to the next entry if there is one
+			if( pFileNotify->NextEntryOffset )
+				pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset) ;
+			else
+				pFileNotify = NULL;
 		}
-		while( pFileNotify->NextEntryOffset );
 	
 		RestartMakeThread(makejob);
 	}
