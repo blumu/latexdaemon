@@ -1340,7 +1340,7 @@ void print_if_possible( std::ostream& color( std::ostream&  stream ) , string st
 	if( TryEnterCriticalSection(&cs) ){
 		// do not print things if an external program is running				
 		if(!hMakeThread && !ExecutingExternalCommand ) { 			
-			cout << color << str;
+			cout << color << str << fgPrompt;
 		}
 		LeaveCriticalSection(&cs);
 	}
