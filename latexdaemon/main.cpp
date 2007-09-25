@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"13"
+#define BUILD			"14"
 
 // See changelog.html for the list of changes:.
 

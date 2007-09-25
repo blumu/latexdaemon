@@ -9,6 +9,12 @@
 PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName )
 {
 	for (size_t cbPath = _tcslen(pszPath); cbPath>0; cbPath--) {
+
+		// if we encounter a slash or backslash then filename has no extension
+		if( pszPath[cbPath-1] == _T('\\') 
+			|| pszPath[cbPath-1] == _T('/') )
+			return NULL;
+
 		if( pszPath[cbPath-1] == _T('.') ) {
 			if( pszExtFileName != NULL )
 				_tcscpy_s(pszExtFileName, size, &pszPath[cbPath]);
