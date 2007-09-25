@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"12"
+#define BUILD			"13"
 
 // See changelog.html for the list of changes:.
 
@@ -584,13 +584,13 @@ void WINAPI MakeThread( void *param )
 	cout << fgPrompt << (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
 	LeaveCriticalSection( &cs );
 
-	free(p);
-	hMakeThread = NULL;
-
     if( errcode == 0 || Autodep ) {
         // Refresh the list of dependencies
         RefreshDependencies(p->makejob == FullCompile);
     }
+
+	hMakeThread = NULL;
+	free(p);
 }
 
 // 
