@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="d:\documents\dphil\latex\safetynotes\safeia.tex"
+				CommandArguments="-autodep -gsview  d:\documents\dphil\latex\Current\thesis\thesis.tex "
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"
@@ -39,7 +39,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-ini=pdflatex -gsview &quot;d:\documents\dphil\latex\bctcs2007\bctcs07-slides.tex&quot;"
+				CommandArguments="-gsview  d:\documents\dphil\latex\Current\thesis\thesis.tex "
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="8.00"
@@ -59,6 +59,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
+				AdditionalDependencies="shlwapi.lib"
 				LinkIncremental="2"
 				GenerateManifest="true"
 				GenerateDebugInformation="true"
@@ -132,6 +133,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
+				AdditionalDependencies="shlwapi.lib"
 				LinkIncremental="2"
 				GenerateDebugInformation="true"
 				SubSystem="1"
@@ -174,11 +176,19 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
+				RelativePath=".\CFilename.h"
+				>
+			</File>
+			<File
 				RelativePath=".\Console.h"
 				>
 			</File>
 			<File
 				RelativePath=".\md5.h"
+				>
+			</File>
+			<File
+				RelativePath=".\path_conv.h"
 				>
 			</File>
 		</Filter>
@@ -194,6 +204,10 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
+				RelativePath=".\CFilename.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\CommandLineToArgv.cpp"
 				>
 			</File>
@@ -203,6 +217,10 @@
 			</File>
 			<File
 				RelativePath=".\md5.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\path_conv.cpp"
 				>
 			</File>
 		</Filter>
