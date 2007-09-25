@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"24 September 2007"
+#define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"11"
+#define BUILD			"12"
 
 // See changelog.html for the list of changes:.
 
@@ -351,6 +351,17 @@ void SetTitle(string state)
 
 
 
+// Print a string in a given color only if the output is not already occupied, otherwise do nothing
+void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
+{
+	if( TryEnterCriticalSection(&cs) ){
+		// do not print things if an external program is running				
+		if(!hMakeThread && !ExecutingExternalCommand ) { 			
+			cout << color << str << fgPrompt;
+		}
+		LeaveCriticalSection(&cs);
+	}
+}
 
 // Read a list of filenames from the file 'filename' and store them in the list 'deps'
 void ReadDependencies(string filename, vector<CFilename> &deps)
@@ -478,14 +489,14 @@ void ExecuteOptionWatch( string optionarg )
 	Watch = optionarg != "no";
 	if( Watch ) {
 		EnterCriticalSection( &cs );
-		cout << "-Watch for file modifications activated" << endl;
+		cout << "-File modification monitoring activated" << endl;
 		LeaveCriticalSection( &cs );
 		if( pglob && !hWatchingThread)
 			RestartWatchingThread();
 	}
 	else {
 		EnterCriticalSection( &cs );
-		cout << "-Watch for file modification deactivated" << endl;
+		cout << "-File modification monitoring disabled" << endl;
 		LeaveCriticalSection( &cs );
 		if( hWatchingThread ) {
 			// Stop the watching thread
@@ -506,7 +517,7 @@ void ExecuteOptionAutoDependencies( string optionarg )
 	}
 	else {
 		EnterCriticalSection( &cs );
-		cout << "-Automatic dependency detection deactivated" << endl;
+		cout << "-Automatic dependency detection disabled" << endl;
 		LeaveCriticalSection( &cs );
 	}
 }
@@ -636,11 +647,8 @@ void WINAPI CommandPromptThread( void *param )
             WaitForSingleObject(hMakeThread, INFINITE);
         }
 
-        if( printprompt ) {
-            EnterCriticalSection( &cs );
-            cout << fgPrompt << (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
-            LeaveCriticalSection( &cs );
-        }
+        if( printprompt )
+            print_if_possible(fgPrompt, hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
         printprompt = true;
 
         // Read a command from the user
@@ -851,7 +859,7 @@ int _tmain(int argc, TCHAR *argv[])
 {
 	SetTitle("prompt");
 
-	cout << endl << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
+	cout << endl << fgNormal << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
 
 	// look for gsview32
 	HKEY hkey;
@@ -989,7 +997,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 			_tprintf(_T("  %2d: '%s'\n"), n, pnewglob->File(n));
 	}
 	else
-		cout << "-No dependency.\n";
+		cout << "-No additional dependency specified.\n";
 		
 	if(pnewglob->FileCount() == 0) {
 		delete pnewglob;
@@ -1536,17 +1544,6 @@ bool RestartMakeThread( JOB makejob ) {
 	return hMakeThread!= NULL;
 }
 
-// Print a string in a given color only if the output is not already occupied, otherwise do nothing
-void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
-{
-	if( TryEnterCriticalSection(&cs) ){
-		// do not print things if an external program is running				
-		if(!hMakeThread && !ExecutingExternalCommand ) { 			
-			cout << color << str << fgPrompt;
-		}
-		LeaveCriticalSection(&cs);
-	}
-}
 
 // Allocate and initialize a WATCHDIRINFO structure
 WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
@@ -1635,15 +1632,17 @@ void WINAPI WatchingThread( void *param )
         ////// get the digest of the dependcy files
         md5 *dg_deps = new md5 [deps.size()];
         for (size_t n = 0; n < deps.size(); n++) {
-            if( dg_deps[n].DigestFile(deps[n].c_str()) )
-                print_if_possible(fgMsg, "Dependency detected: " + deps[n].Relative(sCurrDir) + "\n");
+            if( dg_deps[n].DigestFile(deps[n].c_str()) ) {
+                if(n>0) print_if_possible(fgMsg, "Dependency detected: " + deps[n].Relative(sCurrDir) + "\n");
+            }
             else
                 print_if_possible(fgIgnoredfile, "Dependency detected but cannot be opened: " + deps[n].Relative(sCurrDir) + "\n");
         }
         md5 *dg_preamb_deps = new md5 [preamb_deps.size()];
         for (size_t n = 0; n < preamb_deps.size(); n++) {
-            if( dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str()) )
-                print_if_possible(fgMsg, "Preamble dependency detected: " + preamb_deps[n].Relative(sCurrDir) + "\n");
+            if( dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str()) ) {
+                if(n>0) print_if_possible(fgMsg, "Preamble dependency detected: " + preamb_deps[n].Relative(sCurrDir) + "\n");
+            }
             else
             {
                 if( ExternalPreamblePresent && n == 0  ) {
