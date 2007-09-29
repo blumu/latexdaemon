@@ -7,18 +7,32 @@
 
 // See changelog.html for the list of changes:.
 
-// TODO:
-//  At the moment, messages reporting that some watched file has been modified are not shown while the "make" 
+////////////////////
+// TODO LIST
+//
+//  - At the moment, messages reporting that some watched file has been modified are not shown while the "make" 
 //  thread is running. This is done in order to avoid printf interleaving. A solution would 
 //  be to delay the printing of these messages until the end of the execution of the make "thread".
 //  Another solution is to implement a separate thread responsible of the output of all other threads.
+//
+// - Implement the InternalPreamble feature. In this mode, the preamble is automatically extracted from the main
+//   .tex file and there is no need to create a separate preamble file
+//
+// -  Latex output filtering. Add an option -filter={err|err+warn|warn|*}. The * filter mode
+//    corresponds to the current mode where all the latex output is dumped to the console.
+//    In other modes, the daemon filters the output and prints only error messages and/or warnings
+////////////////
 
+////////////////////
 // Acknowledgment:
+//
 // - The MD5 class is a modification of CodeGuru's one: http://www.codeguru.com/Cpp/Cpp/algorithms/article.php/c5087
 // - Command line processing routine from The Code Project: http://www.codeproject.com/useritems/SimpleOpt.asp
 // - Console color header file (Console.h) from: http://www.codeproject.com/cpp/AddColorConsole.asp
 // - Function CommandLineToArgvA and CommandLineToArgvW from http://alter.org.ua/en/docs/win/args/
 // - Absolute/Relative path converter module from http://www.codeproject.com/useritems/path_conversion.asp
+//
+///////////////////
 
 #define _WIN32_WINNT  0x0400
 #define _CRT_SECURE_NO_DEPRECATE
@@ -43,6 +57,7 @@
 #include "CommandLineToArgv.h"
 #include "path_conv.h"
 #include "CFilename.h"
+#include "redir.h"
 using namespace std;
 
 
@@ -80,6 +95,10 @@ using namespace std;
 // constants corresponding to the different possible jobs that can be exectuted
 enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 
+// constants corresponding to the different possible output filtering mode
+enum FILTER  { NoFilter = 0, ErrFilter, WarnFilter, ErrWarnFilter };
+
+
 
 //////////
 /// Prototypes
@@ -92,11 +111,11 @@ void WINAPI MakeThread( void *param );
 
 BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam);
 
-// TODO: move the following function to a proper class. After all this is a C++ file!
+// TODO: move the following function to a proper class. After all we are programming in C++!
 int loadfile( CSimpleGlob *pnglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
-int fullcompile();
-int compile();
+DWORD fullcompile();
+DWORD compile();
 int dvips();
 int ps2pdf();
 int bibtex();
@@ -190,6 +209,9 @@ string texoptions = " -interaction=nonstopmode --src-specials";
 // automatic dependencies 
 vector<CFilename> auto_deps, auto_preamb_deps;
 
+// output filtering mode
+FILTER Filter;
+
 
 // type of the parameter passed to the "make" thread
 typedef struct {
@@ -205,15 +227,6 @@ typedef struct {
     int curBuffer;
 } WATCHDIRINFO ;
 
-bool is_wdi_in(vector<WATCHDIRINFO *> vec, PCTSTR path)
-{
-    for(vector<WATCHDIRINFO *>::iterator it = vec.begin(); it!= vec.end(); it++ ) {
-        if(0 ==_tcsicmp((*it)->szPath, path ) )
-            return true;
-    }
-    return false;
-}
-
 
 // define the ID values to indentify the option
 enum { 
@@ -222,7 +235,7 @@ enum {
 	// prompt commands
 	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, 
 	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, 
-	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP
+	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
 };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
@@ -253,6 +266,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_AUTODEP,		_T("--autodep"),	SO_REQ_CMB },
     { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
     { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
+    { OPT_FILTER,		_T("-filter"),		SO_REQ_SEP },
+    { OPT_FILTER,		_T("--filter"),		SO_REQ_SEP },
     { OPT_GSVIEW,		_T("--gsview"),		SO_NONE },
     { OPT_GSVIEW,		_T("-gsview"),		SO_NONE },	
     SO_END_OF_OPTIONS                   // END
@@ -275,7 +290,8 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_COMPILE,		_T("-compile"),		SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
-	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
+    { OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
+    { OPT_FILTER,		_T("-filter"),		SO_REQ_SEP  },
     { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
     { OPT_AUTODEP,		_T("-autodep"),     SO_REQ_CMB  },
@@ -308,46 +324,48 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 
 // show the usage of this program
 void ShowUsage(TCHAR *progname) {
-	cout << "USAGE: latexdameon [options] mainfile.tex [dependencies]" <<endl
-		 << "where" << endl
-		 << "* options can be:" << endl
-		 << " --help" << endl 
-		 << "   Show this help message." <<endl<<endl
-		 << " --watch={yes|no}" << endl 
-		 << "   If set to yes then it will run the necessary compilation and then exit without watching for file changes."<<endl<<endl
-		 << " --force {compile|fullcompile}" << endl
-		 << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
-		 << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
-		 << " --gsview " << endl 
-		 << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl << endl
-		 << " --ini=inifile" << endl 
-		 << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
+    cout << "USAGE: latexdameon [options] mainfile.tex [dependencies]" <<endl
+         << "where" << endl
+         << "* options can be:" << endl
+         << " --help" << endl 
+         << "   Show this help message." <<endl<<endl
+         << " --watch={yes|no}" << endl 
+         << "   If set to yes then it will run the necessary compilation and then exit without watching for file changes."<<endl<<endl
+         << " --force {compile|fullcompile}" << endl
+         << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
+         << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
+         << " --gsview " << endl 
+         << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl << endl
+         << " --ini=inifile" << endl 
+         << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
          << " --autodep={yes|no}" << endl 
          << "   Activate the automatic detection of dependencies." << endl << endl
-		 << " --afterjob={dvips|rest}" << endl 
-		 << "   . 'dvips' specifies that dvips should be run after a successful compilation of the .tex file," <<endl
-		 << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
-		 << " --preamble={none|external}" << endl 
-		 << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
-		 << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically deactivated."<<endl
-		 << "   . 'external' (default) specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exist it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
-		 << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
-		 << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
-	     << "INSTRUCTIONS:" << endl
-		 << "Suppose main.tex is the main file of your Latex document then:" << endl
-	     << "  1. move the preamble from main.tex to a new file named mainfile.pre" << endl 
-	     << "  2. insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
-	     << "  3. start the daemon with the command \"latexdaemon main.tex *.tex\" " << 
-		    "(if you use pdflatex then add the option \"-ini=pdflatex\")" << endl << endl;
+         << " --afterjob={dvips|rest}" << endl 
+         << "   . 'dvips' specifies that dvips should be run after a successful compilation of the .tex file," <<endl
+         << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
+         << " --filter={*|err|warn|err+warn}" << endl 
+         << "   . Set the latex output filtering mode." <<endl <<endl
+         << " --preamble={none|external}" << endl 
+         << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
+         << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically deactivated."<<endl
+         << "   . 'external' (default) specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exist it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
+         << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
+         << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
+         << "INSTRUCTIONS:" << endl
+         << "Suppose main.tex is the main file of your Latex document then:" << endl
+         << "  1. move the preamble from main.tex to a new file named mainfile.pre" << endl 
+         << "  2. insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
+         << "  3. start the daemon with the command \"latexdaemon main.tex *.tex\" " << 
+            "(if you use pdflatex then add the option \"-ini=pdflatex\")" << endl << endl;
 }
 
 // update the title of the console
 void SetTitle(string state)
 {
-	if( texfullpath != "" )
-		SetConsoleTitle((state + " - "+ texinifile + "Daemon - " + texfullpath).c_str());
-	else
-		SetConsoleTitle((state + " - " + texinifile + "Daemon").c_str());
+    if( texfullpath != "" )
+        SetConsoleTitle((state + " - "+ texinifile + "Daemon - " + texfullpath).c_str());
+    else
+        SetConsoleTitle((state + " - " + texinifile + "Daemon").c_str());
 }
 
 
@@ -355,13 +373,13 @@ void SetTitle(string state)
 // Print a string in a given color only if the output is not already occupied, otherwise do nothing
 void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
 {
-	if( TryEnterCriticalSection(&cs) ){
-		// do not print things if an external program is running
+    if( TryEnterCriticalSection(&cs) ){
+        // do not print things if an external program is running
         if(!ExecutingExternalCommand ) { 
-			cout << color << str << fgPrompt;
-		}
-		LeaveCriticalSection(&cs);
-	}
+            cout << color << str << fgPrompt;
+        }
+        LeaveCriticalSection(&cs);
+    }
 }
 
 // Read a list of filenames from the file 'filename' and store them in the list 'deps'
@@ -382,6 +400,16 @@ void ReadDependencies(string filename, vector<CFilename> &deps)
         }
         depFile.close();
     }
+}
+
+// Check if one of the directory in the list vec corresponds to the path 'path'
+bool is_wdi_in(vector<WATCHDIRINFO *> vec, PCTSTR path)
+{
+    for(vector<WATCHDIRINFO *>::iterator it = vec.begin(); it!= vec.end(); it++ ) {
+        if(0 ==_tcsicmp((*it)->szPath, path ) )
+            return true;
+    }
+    return false;
 }
 
 // Compare two set of strings and return 0 if they both contain the same strings.
@@ -436,28 +464,28 @@ void ExecuteOptionIni( string optionarg )
 // Code executed when the -preamble option is specified
 void ExecuteOptionPreamble( string optionarg )
 {
-	EnterCriticalSection( &cs );
-	LookForExternalPreamble = (optionarg=="none") ? false : true ;
-	if( LookForExternalPreamble )
-		cout << "-I will look for an external preamble file next time I load a .tex file." << endl;
-	else
-		cout << "-I will not look for an external preamble next time I load a .tex file." << endl;
-	LeaveCriticalSection( &cs );
+    EnterCriticalSection( &cs );
+    LookForExternalPreamble = (optionarg=="none") ? false : true ;
+    if( LookForExternalPreamble )
+        cout << "-I will look for an external preamble file next time I load a .tex file." << endl;
+    else
+        cout << "-I will not look for an external preamble next time I load a .tex file." << endl;
+    LeaveCriticalSection( &cs );
 }
 
 // Code executed when the -force option is specified
 void ExecuteOptionForce( string optionarg, JOB &force )
 {
-	EnterCriticalSection( &cs );
-	if( optionarg=="fullcompile" ) {
-		force = FullCompile;
-		cout << "-Initial full compilation forced." << endl;
-	}
-	else {
-		force = Compile;
-		cout << "-Initial compilation forced." << endl;
-	}
-	LeaveCriticalSection( &cs );
+    EnterCriticalSection( &cs );
+    if( optionarg=="fullcompile" ) {
+        force = FullCompile;
+        cout << "-Initial full compilation forced." << endl;
+    }
+    else {
+        force = Compile;
+        cout << "-Initial compilation forced." << endl;
+    }
+    LeaveCriticalSection( &cs );
 }
 
 // code for the -gsview option
@@ -507,27 +535,49 @@ void ExecuteOptionWatch( string optionarg )
 	}
 }
 
+// Code executed when the -filter option is specified
+void ExecuteOptionOutputFilter( string optionarg )
+{
+    string filtermessage;
+    if( optionarg == "err" ) {
+        Filter = ErrFilter;
+        filtermessage = "error messages only";
+    }
+    else if( optionarg == "warn" ) {
+        Filter = WarnFilter;
+        filtermessage = "warning messages only";
+    }
+    else if( optionarg == "err+warn" || optionarg == "warn+err" ) {
+        Filter = ErrWarnFilter;
+        filtermessage = "error and warning messages only";
+    }
+    else {
+        Filter = NoFilter;
+        filtermessage = "entire output";
+    }
+
+    EnterCriticalSection( &cs );
+    cout << "-Latex output filtering set to: " << filtermessage << endl;
+    LeaveCriticalSection( &cs );
+}
+
 // Code executed when the -autodep option is specified
 void ExecuteOptionAutoDependencies( string optionarg )
 {
-	Autodep = optionarg != "no";
-	if( Autodep ) {
-		EnterCriticalSection( &cs );
-		cout << "-Automatic dependency detection activated" << endl;
-		LeaveCriticalSection( &cs );
-	}
-	else {
-		EnterCriticalSection( &cs );
-		cout << "-Automatic dependency detection disabled" << endl;
-		LeaveCriticalSection( &cs );
-	}
+    Autodep = optionarg != "no";
+    EnterCriticalSection( &cs );
+    if( Autodep )
+        cout << "-Automatic dependency detection activated" << endl;
+    else
+        cout << "-Automatic dependency detection disabled" << endl;
+    LeaveCriticalSection( &cs );
 }
 
 
 // perform the necessary compilation
-int make(JOB makejob)
+DWORD make(JOB makejob)
 {
-	int ret;
+	DWORD ret;
 
 	if( makejob == Rest )
 		return 0;
@@ -573,7 +623,7 @@ void WINAPI MakeThread( void *param )
         CopyFile((texdir+texbasename+".aux").c_str(), (texdir+auxbackupname).c_str(), FALSE);
     }
 
-    int errcode = make(p->makejob);
+    DWORD errcode = make(p->makejob);
 
     if( p->makejob == Compile && errcode == -1) 
         // Restore the backup of the .aux file
@@ -723,14 +773,16 @@ void WINAPI CommandPromptThread( void *param )
                  << "  preamble={none,external}  set the preamble mode for the file to be loaded" << endl
                  << "  autodep={yes,no}          activate/deactivate automatic dependency detection" << endl
                  << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
-                 << "  watch={yes,no}            activate/deactivate file modification watching" << endl << endl;
+                 << "  watch={yes,no}            activate/deactivate file modification watching" << endl 
+                 << "  filtering={*|err|warn|err+warn}  set the filtering mode for latex ouput" << endl << endl;
             LeaveCriticalSection( &cs ); 
             break;
-        case OPT_INI:			ExecuteOptionIni(args.OptionArg());			break;
-        case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());	break;
-        case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());	break;
-        case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());		break;
+        case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
+        case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());         break;
+        case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());         break;
+        case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());            break;
         case OPT_AUTODEP:		ExecuteOptionAutoDependencies(args.OptionArg()); break;
+        case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
         case OPT_BIBTEX:		bibtex();		break;
         case OPT_DVIPS:			dvips();		break;
         case OPT_PS2PDF:		ps2pdf();		break;
@@ -913,6 +965,7 @@ int _tmain(int argc, TCHAR *argv[])
             case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
             case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
             case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
+            case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
             case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
             case OPT_GSVIEW:        ExecuteOptionGsview();                              break;
             case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
@@ -955,6 +1008,12 @@ exit:
     return ret;
 }
 
+
+// Test if the file 'filename' exists
+bool FileExists( LPCTSTR filename ) {
+    struct stat buffer ;
+    return 0 == stat( filename, &buffer );
+}
 
 // Load the .tex file specified in the first argument of args, the remainings arguements are
 // the dependencies of the .tex file.
@@ -1004,21 +1063,18 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 	// change current directory
 	_chdir(texdir.c_str());
 
-	int res; // will contain the result of the comparison of the timestamp of the preamble file with the format file
 
 	// check for the presence of the external preamble file
 	if( LookForExternalPreamble ) {
 		// compare the timestamp of the preamble.tex file and the format file
 		preamble_filename = string(mainfile) + "." DEFAULTPREAMBLE1_EXT;
 		preamble_basename = string(mainfile);
-		res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
-		ExternalPreamblePresent = !(res & ERR_SRCABSENT);
+        ExternalPreamblePresent = FileExists(preamble_filename.c_str());
 		if ( !ExternalPreamblePresent ) {
 			// try with the second default preamble name
 			preamble_filename = DEFAULTPREAMBLE2_FILENAME;
 			preamble_basename = DEFAULTPREAMBLE2_BASENAME;
-			res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
-			ExternalPreamblePresent = !(res & ERR_SRCABSENT);
+            ExternalPreamblePresent = FileExists(preamble_filename.c_str());
 			if ( !ExternalPreamblePresent ) {
 				cout << fgWarning << "Warning: Preamble file not found! (I have looked for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
 			}
@@ -1027,66 +1083,115 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 	else
 		ExternalPreamblePresent = false;
 
-	if( ExternalPreamblePresent )
-		cout << "-Preamble file: " << preamble_filename << "\n";
 
-	if( initialjob != Rest ) {
-		make(initialjob);
-	}
-	// Determine what needs to be recompiled based on the files that have been touched since last compilation.
-	else {
-		// The external preamble file is used and the format file does not exist or has a timestamp
-		// older than the preamble file : then recreate the format file and recompile the .tex file.
-        if( ExternalPreamblePresent && (res == SRC_FRESHER || res & ERR_OUTABSENT) ) {
-			if( res == SRC_FRESHER ) {
-				 cout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
-				 cout << fgMsg << "  Let's recreate the format file and recompile " << texbasename << ".tex.\n";
-			}
-			else {		
-				cout << fgMsg << "+ " << preamble_basename << ".fmt does not exist. Let's create it...\n";
-			}
-			make(FullCompile);
-		}
+    ////////////////////////////////
+    //
+    // Determine what needs to be recompiled based on the files that have been touched since last compilation.
+    //
+
+    // what kind of compilation is needed to update the output file (format & .dvi file) ?
+    JOB job = initialjob;  // by default it is the job requested by the user (using command line options)
+
+
+    ///////////////////
+    // Check if the preambles dependencies have been touched since last compilation (if an external preamble file is used)
+
+    if( ExternalPreamblePresent ) {
+        ReadDependencies(texbasename+"-preamble.dep", auto_preamb_deps);
+        cout << "-Preamble file: " << preamble_filename << "\n";
+
+        // compare the timestamp of the preamble file with the format file
+	    int res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
 		
-		// either the preamble file exists and the format file is up-to-date  or  there is no preamble file
-		else {
-			// check if the main file has been modified since the creation of the dvi file
-			int maintex_comp = compare_timestamp((texbasename+".tex").c_str(), (texbasename+output_ext).c_str());
+		// If the format file is older than the preamble file
+        if( res == SRC_FRESHER ) {
+            // then it is necessary to recreate the format file and to perform a full recompilation
+            job = FullCompile;
+            cout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+        }
+        // if the format file does not exist
+        else if ( res & ERR_OUTABSENT ) {
+            job = FullCompile;
+            cout << fgMsg << "+ " << preamble_basename << ".fmt does not exist. Let's create it...\n";
+        }
 
-			// check if a dependency file has been modified since the creation of the dvi file
-			bool dependency_fresher = false;
-			for(int i=1; !dependency_fresher && i<pnewglob->FileCount(); i++)
-				dependency_fresher = SRC_FRESHER == compare_timestamp(pnewglob->File(i), (texbasename+output_ext).c_str()) ;
 
-			if ( maintex_comp & ERR_SRCABSENT ) {
-				cout << fgErr << "File " << mainfile << ".tex not found!\n" << fgNormal;
-				delete pnewglob;
-				return 2;
-			}
-			else if ( maintex_comp & ERR_OUTABSENT ) {
-				cout << fgMsg << "+ " << mainfile << output_ext << " does not exist. Let's create it...\n";
-				make(Compile);
-			}
-            else if( dependency_fresher || maintex_comp == SRC_FRESHER ) {
-				cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
-				make(Compile);
-			}
-			// else 
-			//   We have maintex_comp == OUT_FRESHER and dependency_fresher=false therefore 
-			//   there is no need to recompile.
-		}
-	}
-	
-    // Initialize the dependency list
+        // Check if some preamble dependency has been tooched
+        if( job != FullCompile )
+            for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
+                it!= auto_preamb_deps.end(); it++) {
+                res = compare_timestamp(it->c_str(), (preamble_basename+".fmt").c_str());
+                if( res == SRC_FRESHER ) {
+                    cout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
+                    job = FullCompile;
+                }
+            }
+    }
+
+    
+    // Initialize the .tex file dependency list
     ReadDependencies(texbasename+".dep", auto_deps);
-    ReadDependencies(texbasename+"-preamble.dep", auto_preamb_deps);
 
-	// replace the current active file
-	if( pglob )
-		delete pglob;
-	pglob = pnewglob;
+    // If the preamble file does not need to be recompiled
+    // and if compilation of the .tex file is not requested by the user
+    if( job != Compile && job != FullCompile) {
 
-	return 0;
+        ///////////////////
+        // Check if the .tex file dependencies have been touched since last compilation
+        
+        // check if the main file has been modified since the creation of the dvi file
+        int maintex_comp = compare_timestamp((texbasename+".tex").c_str(), (texbasename+output_ext).c_str());
+
+        if ( maintex_comp & ERR_SRCABSENT ) {
+            cout << fgErr << "File " << mainfile << ".tex not found!\n" << fgNormal;
+            delete pnewglob;
+            return 2;
+        }
+        else if ( maintex_comp & ERR_OUTABSENT ) {
+            cout << fgMsg << "+ " << mainfile << output_ext << " does not exist. Let's create it...\n";
+            job = Compile;
+        }
+        else if( maintex_comp == SRC_FRESHER ) {
+            cout << fgMsg << "+ the main .tex file has been modified since last run. Let's recompile...\n";
+            job = Compile;
+        }
+        else { // maintex_comp == OUT_FRESHER 
+
+            // check if some manual dependency file has been modified since the creation of the dvi file
+            for(int i=1; i<pnewglob->FileCount(); i++)
+                if( SRC_FRESHER == compare_timestamp(pnewglob->File(i), (texbasename+output_ext).c_str()) ) {
+                    cout << fgMsg << "+ The file " << pnewglob->File(i) << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
+                    job = Compile;
+                    break;
+                }
+
+            // Check if some automatic dependencies has been tooched
+            if( job != FullCompile )
+                for(vector<CFilename>::iterator it = auto_deps.begin();
+                    it!= auto_deps.end(); it++)
+                    if( SRC_FRESHER == compare_timestamp(it->c_str(), (texbasename+output_ext).c_str()) ) {
+                        cout << fgMsg << "+ The file " << it->c_str() << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";                        
+                        job = Compile;
+                    }
+        }
+    }
+
+
+    // Perform the job that needs to be done
+    if( job != Rest ) {
+        if( job == FullCompile )
+            cout << fgMsg << "  Let's recreate the format file and then recompile " << texbasename << ".tex.\n";
+
+        make(job);
+    }
+
+
+    // replace the current active file
+    if( pglob )
+        delete pglob;
+    pglob = pnewglob;
+
+    return 0;
 }
 
 
@@ -1094,15 +1199,15 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 // compare the time stamp of source and target files
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 {
-	struct stat attr_src, attr_out;			// file attribute structures
-	int res_src, res_out;
+    struct stat attr_src, attr_out;			// file attribute structures
+    int res_src, res_out;
 
-	res_src = stat(sourcefile, &attr_src);
-	res_out = stat(outputfile, &attr_out);
-	if( res_src || res_out ) // problem when getting the attributes of the files?
-		return  (res_src ? ERR_SRCABSENT : 0) | (res_out ? ERR_OUTABSENT : 0);
-	else
-		return ( difftime(attr_out.st_mtime, attr_src.st_mtime) > 0 ) ? OUT_FRESHER : SRC_FRESHER;
+    res_src = stat(sourcefile, &attr_src);
+    res_out = stat(outputfile, &attr_out);
+    if( res_src || res_out ) // problem when getting the attributes of the files?
+        return  (res_src ? ERR_SRCABSENT : 0) | (res_out ? ERR_OUTABSENT : 0);
+    else
+        return ( difftime(attr_out.st_mtime, attr_src.st_mtime) > 0 ) ? OUT_FRESHER : SRC_FRESHER;
 }
 
 
@@ -1111,67 +1216,44 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 // hEvtAbortMake event)
 DWORD launch_and_wait(LPCTSTR cmdline)
 {
-	STARTUPINFO si;
-	PROCESS_INFORMATION pi;
-	LPTSTR szCmdline= _tcsdup(cmdline);
-
-	ZeroMemory( &si, sizeof(si) );
-	si.cb = sizeof(si);
-	//si.lpTitle = "latex";
-	//si.wShowWindow = SW_HIDE;
-	//si.dwFlags = STARTF_USESHOWWINDOW;
-	ZeroMemory( &pi, sizeof(pi) );
-
-	EnterCriticalSection( &cs );
-	ExecutingExternalCommand = true;
+    LPTSTR szCmdline= _tcsdup(cmdline);
 
     DWORD dwRet = 0;
-	
-	// Start the child process. 
-	if( !CreateProcess( NULL,   // No module name (use command line)
-		szCmdline,      // Command line
-		NULL,           // Process handle not inheritable
-		NULL,           // Thread handle not inheritable
-		FALSE,          // Set handle inheritance to FALSE
-		0,
-		//CREATE_NEW_CONSOLE,              // No creation flags
-		NULL,           // Use parent's environment block
-		NULL,           // Use parent's starting directory 
-		&si,            // Pointer to STARTUPINFO structure
-		&pi )           // Pointer to PROCESS_INFORMATION structure
-	) {
+    HANDLE hProc = NULL;
+
+    EnterCriticalSection( &cs );
+    ExecutingExternalCommand = true;
+
+
+    CRedirector redir(cout);
+    if( ! redir.Open(szCmdline, Filter != NoFilter ) )
+    {
         dwRet = GetLastError();
-		cout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
-		ExecutingExternalCommand = false;
-		LeaveCriticalSection( &cs ); 
-        free(szCmdline);
-		return dwRet;
-	}
-	free(szCmdline);
+        cout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
+        goto clean;
+    }
+    hProc = redir.GetProcessHandle();
 
-	// Wait until child process exits or the make process is aborted.
-	HANDLE hp[2] = {pi.hProcess, hEvtAbortMake};
-	switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
-	case WAIT_OBJECT_0:
-		// Get the return code
-		GetExitCodeProcess( pi.hProcess, &dwRet);
-		break;
-	case WAIT_OBJECT_0+1:
-		dwRet = -1;
-		TerminateProcess( pi.hProcess,1);
-		break;
-	default:
-		break;
-	}
+    // Wait until child process exits or the make process is aborted.
+    HANDLE hp[2] = {hProc, hEvtAbortMake};
+    switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
+    case WAIT_OBJECT_0:
+        // Get the return code
+        GetExitCodeProcess( hProc, &dwRet);
+        break;
+    case WAIT_OBJECT_0+1:
+        dwRet = -1;
+        TerminateProcess( hProc,1);
+        break;
+    default:
+        break;
+    }
 
-	// Close process and thread handles. 
-	CloseHandle( pi.hProcess );
-	CloseHandle( pi.hThread );
-
-	ExecutingExternalCommand = false;
+clean:
+    ExecutingExternalCommand = false;
     LeaveCriticalSection( &cs ); 
-
-	return dwRet;
+    free(szCmdline);
+    return dwRet;
 }
 
 // Check that a file has been loaded
@@ -1188,7 +1270,7 @@ bool CheckFileLoaded()
 }
 
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
-int fullcompile()
+DWORD fullcompile()
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -1238,7 +1320,7 @@ int fullcompile()
         cout << fgMsg << "-- Creation of the format file...\n";
         cout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
-        int ret = launch_and_wait(cmdline.c_str());
+        DWORD ret = launch_and_wait(cmdline.c_str());
         if( ret )
             return ret;
     }
@@ -1248,7 +1330,7 @@ int fullcompile()
 
 
 // Compile the final tex file using the precompiled preamble
-int compile()
+DWORD compile()
 {
     if( !CheckFileLoaded() )
         return false;
@@ -1353,227 +1435,227 @@ int compile()
 
 BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam)
 {
-	DWORD pid;
-	TCHAR szClass[15];
-	GetWindowThreadProcessId(hwnd, &pid);
-	RealGetWindowClass(hwnd, szClass, sizeof(szClass));
-	if( _tcscmp(szClass, _T("gsview_class")) == 0 ) {
-		hwndGsview32 = FindWindowEx(hwnd, NULL, "gsview_img_class", NULL);
-	}
-	return TRUE;
+    DWORD pid;
+    TCHAR szClass[15];
+    GetWindowThreadProcessId(hwnd, &pid);
+    RealGetWindowClass(hwnd, szClass, sizeof(szClass));
+    if( _tcscmp(szClass, _T("gsview_class")) == 0 ) {
+        hwndGsview32 = FindWindowEx(hwnd, NULL, "gsview_img_class", NULL);
+    }
+    return TRUE;
 }
 
 // start gsview, 
 int start_gsview32(string filename)
 {
-	string cmdline = gsview32 + " " + filename;
+    string cmdline = gsview32 + " " + filename;
 
-	STARTUPINFO si;
-	LPTSTR szCmdline= _tcsdup(cmdline.c_str());
-	ZeroMemory( &si, sizeof(si) );
-	si.cb = sizeof(si);
-	ZeroMemory( &piGsview32, sizeof(piGsview32) );
+    STARTUPINFO si;
+    LPTSTR szCmdline= _tcsdup(cmdline.c_str());
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    ZeroMemory( &piGsview32, sizeof(piGsview32) );
 	
-	// Start the child process. 
-	if( !CreateProcess( NULL,   // No module name (use command line)
-		szCmdline,      // Command line
-		NULL,           // Process handle not inheritable
-		NULL,           // Thread handle not inheritable
-		FALSE,          // Set handle inheritance to FALSE
-		0,
-		//CREATE_NEW_CONSOLE,              // No creation flags
-		NULL,           // Use parent's environment block
-		NULL,           // Use parent's starting directory 
-		&si,            // Pointer to STARTUPINFO structure
-		&piGsview32 )           // Pointer to PROCESS_INFORMATION structure
-	) {
-		EnterCriticalSection( &cs );
-		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
-		LeaveCriticalSection( &cs ); 
-		return -1;
-	}
-	else
-	{
-		hwndGsview32 = NULL;
-		EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
-	}
-	free(szCmdline);
+    // Start the child process. 
+    if( !CreateProcess( NULL,   // No module name (use command line)
+        szCmdline,      // Command line
+        NULL,           // Process handle not inheritable
+        NULL,           // Thread handle not inheritable
+        FALSE,          // Set handle inheritance to FALSE
+        0,
+        //CREATE_NEW_CONSOLE,              // No creation flags
+        NULL,           // Use parent's environment block
+        NULL,           // Use parent's starting directory 
+        &si,            // Pointer to STARTUPINFO structure
+        &piGsview32 )           // Pointer to PROCESS_INFORMATION structure
+    ) {
+        EnterCriticalSection( &cs );
+        cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
+        LeaveCriticalSection( &cs ); 
+        return -1;
+    }
+    else
+    {
+        hwndGsview32 = NULL;
+        EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
+    }
+    free(szCmdline);
 
 
-	return 0;
+    return 0;
 }
 
 // open a file (located in the same directory as the .tex file) with the program associated with its extension in windows
 int shellfile_open(string filename)
 {
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- view " << filename << " ...\n";
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- view " << filename << " ...\n";
     LeaveCriticalSection( &cs ); 
-	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-		_T((texdir+filename).c_str()),
-		NULL,
-		texdir.c_str(),
-		SW_SHOWNORMAL);
-	return ret>32 ? 0 : ret;
+    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
+        _T((texdir+filename).c_str()),
+        NULL,
+        texdir.c_str(),
+        SW_SHOWNORMAL);
+    return ret>32 ? 0 : ret;
 }
 
 // View the .ps file
 int view_ps()
 {
-	if( !CheckFileLoaded() )
-		return 0;
-	
-	if( UseGswin32 )
-		return start_gsview32(texbasename+".ps");
-	else 
-		return shellfile_open(texbasename+".ps");
+    if( !CheckFileLoaded() )
+        return 0;
+
+    if( UseGswin32 )
+        return start_gsview32(texbasename+".ps");
+    else 
+        return shellfile_open(texbasename+".ps");
 
 }
 
 // View the output file
 int view()
 {
-	return ( output_ext == ".pdf" ) ? view_pdf() : view_dvi();
+    return ( output_ext == ".pdf" ) ? view_pdf() : view_dvi();
 }
 
 // View the .dvi file
 int view_dvi()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	string file=texbasename+".dvi";
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- view " << file << " ...\n";
+    string file=texbasename+".dvi";
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- view " << file << " ...\n";
     LeaveCriticalSection( &cs ); 
-	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-		_T((texdir+file).c_str()),
-		NULL,
-		texdir.c_str(),
-		SW_SHOWNORMAL);
-	return ret>32 ? 0 : ret;
+    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
+        _T((texdir+file).c_str()),
+        NULL,
+        texdir.c_str(),
+        SW_SHOWNORMAL);
+    return ret>32 ? 0 : ret;
 }
 
 // View the .pdf file
 int view_pdf()
 {
-	if( !CheckFileLoaded() )
-		return 0;
-	
-	if( UseGswin32 )
-		return start_gsview32(texbasename+".pdf");
-	else 
-		return shellfile_open(texbasename+".pdf");
+    if( !CheckFileLoaded() )
+        return 0;
+
+    if( UseGswin32 )
+        return start_gsview32(texbasename+".pdf");
+    else 
+        return shellfile_open(texbasename+".pdf");
 }
 
 
 // Edit the .tex file
 int edit()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
     LeaveCriticalSection( &cs ); 
-	int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-		_T(texfullpath.c_str()),
-		NULL,
-		texdir.c_str(),
-		SW_SHOWNORMAL);
-	return ret>32 ? 0 : ret;
+    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
+        _T(texfullpath.c_str()),
+        NULL,
+        texdir.c_str(),
+        SW_SHOWNORMAL);
+    return ret>32 ? 0 : ret;
 }
 
 // Open the folder containing the .tex file
 int openfolder()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- open directory " << texdir << " ...\n";
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- open directory " << texdir << " ...\n";
     LeaveCriticalSection( &cs ); 
-	int ret = (int)(HINSTANCE)ShellExecute(NULL, NULL,
-		_T(texdir.c_str()),
-		NULL,
-		NULL,
-		SW_SHOWNORMAL);
-	return ret>32 ? 0 : ret;
+    int ret = (int)(HINSTANCE)ShellExecute(NULL, NULL,
+        _T(texdir.c_str()),
+        NULL,
+        NULL,
+        SW_SHOWNORMAL);
+    return ret>32 ? 0 : ret;
 }
 
 
 // Convert the postscript file to pdf
 int ps2pdf()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
-	string cmdline = string("ps2pdf ")+texbasename+".ps";
-	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
+    string cmdline = string("ps2pdf ")+texbasename+".ps";
+    cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch_and_wait(cmdline.c_str());
+    return launch_and_wait(cmdline.c_str());
 }
 
 // Convert the dvi file to postscript using dvips
 int dvips()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- Converting " << texbasename << ".dvi to postscript...\n";
-	string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
-	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- Converting " << texbasename << ".dvi to postscript...\n";
+    string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
+    cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch_and_wait(cmdline.c_str());
+    return launch_and_wait(cmdline.c_str());
 }
 
 // Run bibtex on the tex file
 int bibtex()
 {
-	if( !CheckFileLoaded() )
-		return 0;
+    if( !CheckFileLoaded() )
+        return 0;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
-	string cmdline = string("bibtex ")+texbasename;
-	cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
+    string cmdline = string("bibtex ")+texbasename;
+    cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch_and_wait(cmdline.c_str());
+    return launch_and_wait(cmdline.c_str());
 }
 
 
 // Restart the make thread if necessary.
 // returns true if a thread has been launched.
 bool RestartMakeThread( JOB makejob ) {
-	if( makejob == Rest || !CheckFileLoaded() )
-		return false;
+    if( makejob == Rest || !CheckFileLoaded() )
+        return false;
 
-	/// abort the current "make" thread if it is already started
-	if( hMakeThread ) {
-		SetEvent(hEvtAbortMake);
-		// wait for the "make" thread to end
-		WaitForSingleObject(hMakeThread, INFINITE);
-	}
+    /// abort the current "make" thread if it is already started
+    if( hMakeThread ) {
+        SetEvent(hEvtAbortMake);
+        // wait for the "make" thread to end
+        WaitForSingleObject(hMakeThread, INFINITE);
+    }
 
-	// Create a new "make" thread.
-	//  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
-	//  otherwise, if we pass the address of a locally defined variable as a parameter to 
-	//  CreateThread, the content of the structure may change
-	//  by the time the make texbasenamethread is created (since the current thread runs concurrently).
-	MAKETHREADPARAM *p = new MAKETHREADPARAM;
-	p->makejob = makejob;
-	DWORD makethreadID;
-	hMakeThread = CreateThread( NULL,
-			0,
-			(LPTHREAD_START_ROUTINE) MakeThread,
-			(LPVOID)p,
-			0,
-			&makethreadID);
+    // Create a new "make" thread.
+    //  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
+    //  otherwise, if we pass the address of a locally defined variable as a parameter to 
+    //  CreateThread, the content of the structure may change
+    //  by the time the make texbasenamethread is created (since the current thread runs concurrently).
+    MAKETHREADPARAM *p = new MAKETHREADPARAM;
+    p->makejob = makejob;
+    DWORD makethreadID;
+    hMakeThread = CreateThread( NULL,
+	        0,
+	        (LPTHREAD_START_ROUTINE) MakeThread,
+	        (LPVOID)p,
+	        0,
+	        &makethreadID);
 
-	return hMakeThread!= NULL;
+    return hMakeThread!= NULL;
 }
 
 

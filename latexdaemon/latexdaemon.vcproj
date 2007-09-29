@@ -191,6 +191,10 @@
 				RelativePath=".\path_conv.h"
 				>
 			</File>
+			<File
+				RelativePath=".\Redir.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Resource Files"
@@ -221,6 +225,10 @@
 			</File>
 			<File
 				RelativePath=".\path_conv.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Redir.cpp"
 				>
 			</File>
 		</Filter>
