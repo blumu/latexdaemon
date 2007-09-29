@@ -126,8 +126,8 @@ bool ExecutingExternalCommand = false;
 // watch for file changes ?
 bool Watch = true;
 
-// Automatic dependency detection
-bool Autodep = false;
+// Automatic dependency detection (activated by default)
+bool Autodep = true;
 
 // what to do after compilation? (can be change using the -afterjob command argument)
 JOB afterjob = Rest;
@@ -201,7 +201,8 @@ typedef struct {
     HANDLE  hDir;
     char szPath[_MAX_PATH];
     OVERLAPPED overl;
-    BYTE buffer [1024*sizeof(FILE_NOTIFY_INFORMATION )];
+    BYTE buffer [2][512*sizeof(FILE_NOTIFY_INFORMATION )];
+    int curBuffer;
 } WATCHDIRINFO ;
 
 bool is_wdi_in(vector<WATCHDIRINFO *> vec, PCTSTR path)
@@ -248,8 +249,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_AFTERJOB,		_T("--afterjob"),	SO_REQ_CMB },
 	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB },
     { OPT_WATCH,		_T("--watch"),		SO_REQ_CMB },
-	{ OPT_AUTODEP,		_T("-autodep"),		SO_NONE },
-    { OPT_AUTODEP,		_T("--autodep"),	SO_NONE },
+	{ OPT_AUTODEP,		_T("-autodep"),		SO_REQ_CMB },
+    { OPT_AUTODEP,		_T("--autodep"),	SO_REQ_CMB },
     { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
     { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
     { OPT_GSVIEW,		_T("--gsview"),		SO_NONE },
@@ -274,10 +275,10 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_COMPILE,		_T("-compile"),		SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
-	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB	},
+	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
     { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
-    { OPT_AUTODEP,		_T("-autodep"),	    SO_REQ_CMB  },
+    { OPT_AUTODEP,		_T("-autodep"),     SO_REQ_CMB  },
     { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
 	{ OPT_QUIT,			_T("-q"),			SO_NONE		},
 	{ OPT_QUIT,			_T("-quit"),		SO_NONE		},
@@ -321,8 +322,8 @@ void ShowUsage(TCHAR *progname) {
 		 << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl << endl
 		 << " --ini=inifile" << endl 
 		 << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
-		 << " --autodep" << endl 
-         << "   Calculate the dependencies automatically." << endl << endl
+         << " --autodep={yes|no}" << endl 
+         << "   Activate the automatic detection of dependencies." << endl << endl
 		 << " --afterjob={dvips|rest}" << endl 
 		 << "   . 'dvips' specifies that dvips should be run after a successful compilation of the .tex file," <<endl
 		 << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
@@ -355,8 +356,8 @@ void SetTitle(string state)
 void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
 {
 	if( TryEnterCriticalSection(&cs) ){
-		// do not print things if an external program is running				
-		if(!hMakeThread && !ExecutingExternalCommand ) { 			
+		// do not print things if an external program is running
+        if(!ExecutingExternalCommand ) { 
 			cout << color << str << fgPrompt;
 		}
 		LeaveCriticalSection(&cs);
@@ -424,13 +425,13 @@ void RefreshDependencies(bool bPreamble) {
 // Code executed when the -ini option is specified
 void ExecuteOptionIni( string optionarg )
 {
-	texinifile = optionarg;
-	SetTitle("monitoring");
-	cout << "-Intiatialization file set to \"" << texinifile << "\"" << endl;;
-	if( (texinifile == "pdflatex") || (texinifile == "pdftex") )
-		output_ext = ".pdf";
-	else if ( (texinifile == "latex") || (texinifile == "tex") )
-		output_ext = ".dvi";
+    texinifile = optionarg;
+    SetTitle("monitoring");
+    cout << "-Initialization file set to \"" << texinifile << "\"" << endl;;
+    if( texinifile == "pdflatex" || texinifile == "pdftex" )
+        output_ext = ".pdf";
+    else if ( texinifile == "latex" || texinifile == "tex" )
+        output_ext = ".dvi";
 }
 // Code executed when the -preamble option is specified
 void ExecuteOptionPreamble( string optionarg )
@@ -560,37 +561,33 @@ int make(JOB makejob)
 // thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
 {
-	// prepare the abort event so that other thread can stop this one
-	ResetEvent(hEvtAbortMake);
+    // prepare the abort event so that other thread can stop this one
+    ResetEvent(hEvtAbortMake);
 
-	//////////////
-	// perform the necessary compilations
-	MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
+    //////////////
+    // perform the necessary compilations
+    MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
 
-	if( p->makejob == Compile ) {
-		// Make a copy of the .aux file (in case the latex compilation aborts and destroy the .aux file)
-		CopyFile((texdir+texbasename+".aux").c_str(), (texdir+auxbackupname).c_str(), FALSE);
-	}
-
-	int errcode = make(p->makejob);
-
-	if( p->makejob == Compile && errcode == -1) {
-		// Restore the backup of the .aux file
-		CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+".aux").c_str(), FALSE);
-	}
-    
-	// restore the prompt		
-	EnterCriticalSection( &cs );
-	cout << fgPrompt << (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
-	LeaveCriticalSection( &cs );
-
-    if( errcode == 0 || Autodep ) {
-        // Refresh the list of dependencies
-        RefreshDependencies(p->makejob == FullCompile);
+    if( p->makejob == Compile ) {
+        // Make a copy of the .aux file (in case the latex compilation aborts and destroy the .aux file)
+        CopyFile((texdir+texbasename+".aux").c_str(), (texdir+auxbackupname).c_str(), FALSE);
     }
 
-	hMakeThread = NULL;
-	free(p);
+    int errcode = make(p->makejob);
+
+    if( p->makejob == Compile && errcode == -1) 
+        // Restore the backup of the .aux file
+        CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+".aux").c_str(), FALSE);
+    
+    // restore the prompt
+    print_if_possible(fgPrompt, (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING));
+
+    if( errcode == 0 && Autodep ) 
+        // Refresh the list of dependencies
+        RefreshDependencies(p->makejob == FullCompile);
+
+    hMakeThread = NULL;
+    free(p);
 }
 
 // 
@@ -623,7 +620,7 @@ BOOL CALLBACK FindConsoleEnumWndProc(HWND hwnd, LPARAM lparam)
 	 }
 }
 
-HWND FindMyWindow(void)
+HWND FindCurrentProcessWindow(void)
 {
 	HWND hwndConsole = 0;
 	EnumWindows(FindConsoleEnumWndProc, (LPARAM)&hwndConsole);
@@ -764,7 +761,7 @@ void WINAPI CommandPromptThread( void *param )
                         // Initialize OPENFILENAME
                         ZeroMemory(&ofn, sizeof(ofn));
                         ofn.lStructSize = sizeof(ofn);
-                        ofn.hwndOwner = FindMyWindow();
+                        ofn.hwndOwner = FindCurrentProcessWindow();
                         ofn.lpstrFile = szFile;
                         //
                         // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
@@ -857,34 +854,34 @@ err_load:
 
 int _tmain(int argc, TCHAR *argv[])
 {
-	SetTitle("prompt");
+    SetTitle("prompt");
 
-	cout << endl << fgNormal << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
+    cout << endl << fgNormal << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
 
-	// look for gsview32
-	HKEY hkey;
-	if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_KEY_GWIN32PATH, 0, KEY_QUERY_VALUE, &hkey) ) {	
-		TCHAR buff[_MAX_PATH];
-		DWORD size = _MAX_PATH;
-		RegQueryValueEx(hkey,NULL,NULL,NULL,(LPBYTE)buff,&size);
-		RegCloseKey(hkey);
-		gsview32 = buff;
-	}
+    // look for gsview32
+    HKEY hkey;
+    if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_KEY_GWIN32PATH, 0, KEY_QUERY_VALUE, &hkey) ) {	
+        TCHAR buff[_MAX_PATH];
+        DWORD size = _MAX_PATH;
+        RegQueryValueEx(hkey,NULL,NULL,NULL,(LPBYTE)buff,&size);
+        RegCloseKey(hkey);
+        gsview32 = buff;
+    }
 
-	// create the event used to abort the "make" thread
-	hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
-	// create the event used to abort the "watching" thread
-	hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
+    // create the event used to abort the "make" thread
+    hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
+    // create the event used to abort the "watching" thread
+    hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
     // create the event used to notify the "watching" thread of a dependency changed
     hEvtDependenciesChanged = CreateEvent(NULL,TRUE,FALSE,NULL);
-	// initialize the critical section used to sequentialized console output
-	InitializeCriticalSection(&cs);
+    // initialize the critical section used to sequentialized console output
+    InitializeCriticalSection(&cs);
 
 
-	// default options, can be overwritten by command line parameters
-	JOB initialjob = Rest;
+    // default options, can be overwritten by command line parameters
+    JOB initialjob = Rest;
 
-	unsigned int uiFlags = 0;
+    unsigned int uiFlags = 0;
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
         if (args.LastError() != SO_SUCCESS) {
@@ -911,51 +908,51 @@ int _tmain(int argc, TCHAR *argv[])
             continue;
         }
 
-		switch( args.OptionId() ) {
-			case OPT_USAGE:         ShowUsage(NULL);                                    goto exit;
-			case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
-            case OPT_AUTODEP:       ExecuteOptionAutoDependencies("yes");               break;
-			case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
-			case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
-			case OPT_GSVIEW:        ExecuteOptionGsview();                              break;
-			case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
-			case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
-			default:                break;
-		}
+        switch( args.OptionId() ) {
+            case OPT_USAGE:         ShowUsage(NULL);                                    goto exit;
+            case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
+            case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
+            case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
+            case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
+            case OPT_GSVIEW:        ExecuteOptionGsview();                              break;
+            case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
+            case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
+            default:                break;
+        }
         uiFlags |= (unsigned int) args.OptionId();
     }
 
 
-		int ret = -1;
-		CSimpleGlob *nglob = new CSimpleGlob(uiFlags);
-		if( args.FileCount() == 0 ){
-			cout << fgWarning << _T("No input file specified.\n") << fgNormal;
-		}
-		else {
-			if (SG_SUCCESS != nglob->Add(args.FileCount(), args.Files()) ) {
-				cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
-				goto exit;
-			}
-			ret = loadfile(nglob, initialjob);
-		}
+    int ret = -1;
+    CSimpleGlob *nglob = new CSimpleGlob(uiFlags);
+    if( args.FileCount() == 0 ){
+        cout << fgWarning << _T("No input file specified.\n") << fgNormal;
+    }
+    else {
+        if (SG_SUCCESS != nglob->Add(args.FileCount(), args.Files()) ) {
+            cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
+            goto exit;
+        }
+        ret = loadfile(nglob, initialjob);
+    }
 
-		if( Watch ) { // If watching has been requested by the user
-			// if some correct file was given as a command line parameter 
-			if( ret == 0 )
-				RestartWatchingThread(); // then start watching
-			
-			// start the prompt loop
-			CommandPromptThread(NULL);
-		}
-	
-	if(pglob)
-		delete pglob;
+    if( Watch ) { // If watching has been requested by the user
+        // if some correct file was given as a command line parameter 
+        if( ret == 0 )
+            RestartWatchingThread(); // then start watching
+
+        // start the prompt loop
+        CommandPromptThread(NULL);
+    }
+
+    if(pglob)
+        delete pglob;
 exit:	
-	DeleteCriticalSection(&cs);
-	CloseHandle(hEvtAbortMake);
-	CloseHandle(hEvtStopWatching);
+    DeleteCriticalSection(&cs);
+    CloseHandle(hEvtAbortMake);
+    CloseHandle(hEvtStopWatching);
     CloseHandle(hEvtDependenciesChanged);
-	return ret;
+    return ret;
 }
 
 
@@ -1023,7 +1020,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 			res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
 			ExternalPreamblePresent = !(res & ERR_SRCABSENT);
 			if ( !ExternalPreamblePresent ) {
-				cout << fgWarning << "Warning: Preamble file not found! (I have tried " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
+				cout << fgWarning << "Warning: Preamble file not found! (I have looked for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
 			}
 		}
 	}
@@ -1040,7 +1037,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 	else {
 		// The external preamble file is used and the format file does not exist or has a timestamp
 		// older than the preamble file : then recreate the format file and recompile the .tex file.
-		if( ExternalPreamblePresent && ((res == SRC_FRESHER) || (res & ERR_OUTABSENT)) ) {
+        if( ExternalPreamblePresent && (res == SRC_FRESHER || res & ERR_OUTABSENT) ) {
 			if( res == SRC_FRESHER ) {
 				 cout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
 				 cout << fgMsg << "  Let's recreate the format file and recompile " << texbasename << ".tex.\n";
@@ -1070,7 +1067,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 				cout << fgMsg << "+ " << mainfile << output_ext << " does not exist. Let's create it...\n";
 				make(Compile);
 			}
-			else if( dependency_fresher || (maintex_comp == SRC_FRESHER) ) {
+            else if( dependency_fresher || maintex_comp == SRC_FRESHER ) {
 				cout << fgMsg << "+ the main file or some dependency file has been modified since last run. Let's recompile...\n";
 				make(Compile);
 			}
@@ -1127,6 +1124,8 @@ DWORD launch_and_wait(LPCTSTR cmdline)
 
 	EnterCriticalSection( &cs );
 	ExecutingExternalCommand = true;
+
+    DWORD dwRet = 0;
 	
 	// Start the child process. 
 	if( !CreateProcess( NULL,   // No module name (use command line)
@@ -1141,16 +1140,17 @@ DWORD launch_and_wait(LPCTSTR cmdline)
 		&si,            // Pointer to STARTUPINFO structure
 		&pi )           // Pointer to PROCESS_INFORMATION structure
 	) {
-		cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
+        dwRet = GetLastError();
+		cout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
 		ExecutingExternalCommand = false;
 		LeaveCriticalSection( &cs ); 
-		return -1;
+        free(szCmdline);
+		return dwRet;
 	}
 	free(szCmdline);
 
 	// Wait until child process exits or the make process is aborted.
 	HANDLE hp[2] = {pi.hProcess, hEvtAbortMake};
-	DWORD dwRet = 0;
 	switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
 	case WAIT_OBJECT_0:
 		// Get the return code
@@ -1190,42 +1190,44 @@ bool CheckFileLoaded()
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
 int fullcompile()
 {
-    string latex_pre, latex_post;
-    if( Autodep ) {
-        latex_pre =
-"\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
-" \\newwrite\\preambledepfile"
-"  \\immediate\\openout\\preambledepfile = " + texbasename + "-preamble.dep"
+    if( !CheckFileLoaded() )
+        return 0;
 
-" \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi" // create a backup of the original \input command
-                                                                         // (the \ifx test avoids to create a loop in case 
-                                                                         // another hooking has already been set)
+    // Check that external preamble exists
+    if( ExternalPreamblePresent ) {
+        string latex_pre, latex_post;
+        if( Autodep ) {
+            latex_pre =
+                "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
+                " \\newwrite\\preambledepfile"
+                "  \\immediate\\openout\\preambledepfile = " + texbasename + "-preamble.dep"
 
-" \\ifx\\TEXDAEMON@@include\\@undefined\\let\\TEXDAEMON@@include\\include\\fi" // same for \include
+                // create a backup of the original \input command
+                // (the \ifx test avoids to create a loop in case another hooking has already been set)
+                " \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi" 
+                                                                                         
+                // same for \include
+                " \\ifx\\TEXDAEMON@@include\\@undefined\\let\\TEXDAEMON@@include\\include\\fi" 
 
-" \\def\\input{\\@ifnextchar\\bgroup\\Dump@input\\TEXDAEMON@@input}"     // Hook \input (when it is used with the curly bracket {..})
-" \\def\\Dump@input#1{ \\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@input #1}"
+                // Hook \input (when it is used with the curly bracket {..})
+                " \\def\\input{\\@ifnextchar\\bgroup\\Dump@input\\TEXDAEMON@@input}"
+                " \\def\\Dump@input#1{ \\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@input #1}"
 
-" \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@include #1}"
-" \\catcode`\\@=\\TheAtCode\\relax";
+                " \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@include #1}"
+                " \\catcode`\\@=\\TheAtCode\\relax";
 
-        latex_post = "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
-                     " \\immediate\\closeout\\preambledepfile"     // Close the dependency file
-                     " \\let\\input\\TEXDAEMON@@input"             // Restore the original \input
-                     " \\let\\include\\TEXDAEMON@@include";        //    and \include commands.
-                     " \\catcode`\\@=\\TheAtCode\\relax";
-    }
-    else {
-        latex_pre = latex_post = "";
-    }
+            latex_post = "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
+                         " \\immediate\\closeout\\preambledepfile"     // Close the dependency file
+                         " \\let\\input\\TEXDAEMON@@input"             // Restore the original \input
+                         " \\let\\include\\TEXDAEMON@@include";        //    and \include commands.
+                         " \\catcode`\\@=\\TheAtCode\\relax";
+        }
+        else {
+            latex_pre = latex_post = "";
+        }
 
-	if( !CheckFileLoaded() )
-		return 0;
-
-	// Check that external preamble exists
-	if( ExternalPreamblePresent ) {
-		EnterCriticalSection( &cs );
-		string cmdline = string("pdftex")
+        EnterCriticalSection( &cs );
+        string cmdline = string("pdftex")
             + texoptions + " -ini \"&" + texinifile + "\""
             + " \"" 
                 + latex_pre
@@ -1233,88 +1235,118 @@ int fullcompile()
                 + latex_post
                 +" \\dump\\endinput" 
             + "\"";
-		cout << fgMsg << "-- Creation of the format file...\n";
-		cout << "[running '" << cmdline << "']\n" << fgLatex;
-		LeaveCriticalSection( &cs ); 
-		int ret = launch_and_wait(cmdline.c_str());
-		if( ret )
-			return ret;
-	}
-	return compile();
+        cout << fgMsg << "-- Creation of the format file...\n";
+        cout << "[running '" << cmdline << "']\n" << fgLatex;
+        LeaveCriticalSection( &cs ); 
+        int ret = launch_and_wait(cmdline.c_str());
+        if( ret )
+            return ret;
+    }
+
+    return compile();
 }
 
 
 // Compile the final tex file using the precompiled preamble
 int compile()
 {
+    if( !CheckFileLoaded() )
+        return false;
 
-    string latex_pre, latex_post;
-    if( Autodep ) {
+
+    string texengine;  // tex engine to run
+    string formatfile; // formatfile to preload before reading the main .tex file    
+    string latex_pre,  // the latex code that will be executed before and after the main .tex file
+           latex_post; 
+
+    if( ExternalPreamblePresent ) {
+        texengine = "pdftex";
+        formatfile = preamble_basename;
+    }
+    else {
+        texengine = texinifile; // 'texinifile' is equal to "latex" or "pdflatex" depending on the daemon -ini options
+        formatfile = ""; // no format file
+    }
+
+    if ( Autodep ) {
         latex_pre =
-    "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
-        " \\newwrite\\dependfile"
-        " \\openout\\dependfile = " +texbasename + ".dep"
+            // change the @ catcode
+            "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
+                // Create the .dep file
+                " \\newwrite\\dependfile"
+                " \\openout\\dependfile = " +texbasename + ".dep"
 
-        " \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi" // create a backup of the original \input command
-                                                                                 // (the \ifx test avoids to create a loop in case 
-                                                                                 // another hooking has already been set)
+                // Create a backup of the original \include command
+                // (the \ifx test avoids to create a loop in case another hooking has already been set)
+                " \\ifx\\TEXDAEMON@ORG@include\\@undefined\\let\\TEXDAEMON@ORG@include\\include\\fi" 
 
-        " \\ifx\\TEXDAEMON@@include\\@undefined\\let\\TEXDAEMON@@include\\include\\fi" // same for \include
+                // same for input
+                " \\ifx\\TEXDAEMON@ORG@input\\@undefined\\let\\TEXDAEMON@ORG@input\\input\\fi" 
 
-        " \\def\\Dump@input#1{ \\write\\dependfile{#1}\\TEXDAEMON@@input #1}"
-        " \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@input\\TEXDAEMON@@input}"
-        " \\def\\TEXDAEMON@input#1{ \\let\\input\\Dump@input }"
+                // Install a hook for the \include command
+                " \\def\\include#1{\\write\\dependfile{#1}\\TEXDAEMON@ORG@include{#1}}"
 
-        " \\def\\include#1{\\write\\dependfile{#1}\\TEXDAEMON@@include{#1}}"
-    " \\catcode`\\@=\\TheAtCode\\relax";
+                // A hook that write the name of the included file to the dependency file
+                " \\def\\TEXDAEMON@DumpDep@input#1{ \\write\\dependfile{#1}\\TEXDAEMON@ORG@input #1}"
+
+                // A hook that does nothing the first time it's being called
+                // (the first call to \input{...} corresponds to the inclusion of the preamble)
+                // and then behave like the preceeding hook
+                " \\def\\TEXDAEMON@HookIgnoreFirst@input#1{ \\let\\input\\TEXDAEMON@DumpDep@input }"
+
+                // Install a hook for the \input command.
+                + (ExternalPreamblePresent
+                    ?  " \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@HookIgnoreFirst@input\\TEXDAEMON@ORG@input}"
+                    :  " \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@DumpDep@input\\TEXDAEMON@ORG@input}")
+            
+            // restore the @ original catcode
+            + " \\catcode`\\@=\\TheAtCode\\relax";
 
         latex_post = " \\closeout\\dependfile";
+
     }
-    else { // creation of the dependency file is not required...
+    else if( ExternalPreamblePresent ) {
+        // creation of the dependency file is not required...
         // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
         latex_pre = "\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11"
-                    " \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi"
-                    " \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@input\\TEXDAEMON@@input}"
-                    " \\def\\TEXDAEMON@input#1{\\let\\input\\TEXDAEMON@@input }"
+                        " \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi"
+                        " \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@input\\TEXDAEMON@@input}"
+                        " \\def\\TEXDAEMON@input#1{\\let\\input\\TEXDAEMON@@input }"
                     " \\catcode`\\@=\\TheAtCode\\relax";
         latex_post = "";
+
     }
 
-	if( !CheckFileLoaded() )
-		return false;
+    // There is no precompiled preamble and dependency calculation is not required therefore
+    // we compile the latex file normally without loading any format file.
+    else {
+        latex_pre = latex_post = ""; // no special code to run before or after the main .tex file
+    }
 
-	string cmdline;
 
-	EnterCriticalSection( &cs );
-	cout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
-
-	// External preamble used? Then compile using the precompiled preamble.
-	if( ExternalPreamblePresent ) {
-		// Remark on the latex code included in the following command line:
-		//	 % Install a hook for the \input command ...
-		///  \let\TEXDAEMONinput\input
-		//   % which ignores the first file inclusion (the one inserting the preamble)
-		//   \def\input#1{\let\input\TEXDAEMONinput}
-		cmdline = string("pdftex")+
+    ///////
+    // Create the command line adding some latex code before and after the .tex file if necessary
+    string cmdline;
+    if( latex_pre == "" && latex_post == "" ) 
+        cmdline = texengine + texoptions +  " " + texbasename + ".tex";
+    else
+        cmdline = texengine +
             texoptions + 
-            " \"&"+preamble_basename+"\"" +
+            ( formatfile!="" ? " \"&"+formatfile+"\"" : "" ) +
             " \"" + latex_pre
                   + " \\input "+texbasename+".tex "
                   + latex_post
             + "\"";
-		
-		//// Old version requiring the user to insert a conditional at the start of the main .tex file
-		//string cmdline = string("pdftex -interaction=nonstopmode --src-specials \"&")+preamble_basename+"\" \"\\def\\incrcompilation{} \\input "+texbasename+".tex \"";
-		
-		cout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
-	}
-	// no preamble: compile the latex file without the standard latex format file.
-	else {
-		cmdline = string("latex") + texoptions + " " + texbasename+".tex";
-		cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-	}
+
+    // External preamble used? Then compile using the precompiled preamble.
+
+
+    EnterCriticalSection( &cs );
+    cout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
+    cout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-	return launch_and_wait(cmdline.c_str());
+
+    return launch_and_wait(cmdline.c_str());
 }
 
 
@@ -1550,6 +1582,7 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
 {
     WATCHDIRINFO *pwdi = new WATCHDIRINFO;
 
+
     _tcscpy_s(pwdi->szPath, _countof(pwdi->szPath), dirpath);
 
     pwdi->hDir = CreateFile(
@@ -1562,14 +1595,17 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
         NULL // file with attributes to copy 
       );
   
+    memset(&pwdi->overl, 0, sizeof(pwdi->overl));
     pwdi->overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
+
+    pwdi->curBuffer = 0;
 
     // watch the directory
     DWORD BytesReturned;
     ReadDirectoryChangesW(
          pwdi->hDir, /* handle to directory */
-         &pwdi->buffer, /* read results buffer */
-         sizeof(pwdi->buffer), /* length of buffer */
+         &pwdi->buffer[pwdi->curBuffer], /* read results buffer */
+         sizeof(pwdi->buffer[pwdi->curBuffer]), /* length of buffer */
          FALSE, /* monitoring option */
          //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
          FILE_NOTIFY_CHANGE_LAST_WRITE
@@ -1578,9 +1614,6 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
          &BytesReturned, /* bytes returned */
          &pwdi->overl, /* overlapped buffer */
          NULL); /* completion routine */
-
-    DWORD dwNumberbytes;
-    GetOverlappedResult(pwdi->hDir, &pwdi->overl, &dwNumberbytes, FALSE);
 
     return pwdi;
 }
@@ -1606,29 +1639,20 @@ void WINAPI WatchingThread( void *param )
     GetCurrentDir(sCurrDir);
 
     // Iterate this loop every time the dependencies change
-    bool bDepChange = true;
-    while( bDepChange ) {
-        bDepChange = false;
+    bool bContinue = true;
+    while( bContinue ) {
+        bContinue = false;
 
         ///// Dependencies of the main .tex file
         vector<CFilename> deps;
         // Add the manual dependencies (the first one is the main tex file)
         for (int n = 0; n < pglob->FileCount(); ++n)
             deps.push_back(CFilename(sCurrDir,pglob->File(n)));
-        // Read the depency files automatically generated by the last run of latex
+        // load the depencies automatically generated by the last compilation of the main tex file
         if( Autodep )
             for(vector<CFilename>::iterator it = auto_deps.begin(); it!=auto_deps.end();it++)
                 deps.push_back(CFilename(sCurrDir,*it));
        
-        ///// Dependencies of the preamble file
-        vector<CFilename> preamb_deps;
-        preamb_deps.push_back(CFilename(sCurrDir,preamble_filename));
-        // Read the preamble depencies automatically generated by the last run of latex
-        if( Autodep )
-            for(vector<CFilename>::iterator it = auto_preamb_deps.begin(); it!=auto_preamb_deps.end();it++)
-                preamb_deps.push_back(CFilename(sCurrDir,*it));
-        
-
         ////// get the digest of the dependcy files
         md5 *dg_deps = new md5 [deps.size()];
         for (size_t n = 0; n < deps.size(); n++) {
@@ -1638,22 +1662,35 @@ void WINAPI WatchingThread( void *param )
             else
                 print_if_possible(fgIgnoredfile, "Dependency detected but cannot be opened: " + deps[n].Relative(sCurrDir) + "\n");
         }
-        md5 *dg_preamb_deps = new md5 [preamb_deps.size()];
-        for (size_t n = 0; n < preamb_deps.size(); n++) {
-            if( dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str()) ) {
-                if(n>0) print_if_possible(fgMsg, "Preamble dependency detected: " + preamb_deps[n].Relative(sCurrDir) + "\n");
-            }
-            else
-            {
-                if( ExternalPreamblePresent && n == 0  ) {
-                    print_if_possible(fgErr, "The preamble file " + preamble_filename + " cannot be found or opened!\n" );
-                    hWatchingThread = NULL;
-                    delete dg_deps;
-                    delete dg_preamb_deps;
-                    return;
+
+        ///// Dependencies of the preamble file
+        vector<CFilename> preamb_deps;
+        md5 *dg_preamb_deps = NULL;
+        if( ExternalPreamblePresent ) {
+            preamb_deps.push_back(CFilename(sCurrDir,preamble_filename));
+            // load the depencies automatically generated by the last compilation of the preamble
+            if( Autodep )
+                for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
+                    it!=auto_preamb_deps.end();it++)
+                    preamb_deps.push_back(CFilename(sCurrDir,*it));
+
+            dg_preamb_deps = new md5 [preamb_deps.size()];
+            for (size_t n = 0; n < preamb_deps.size(); n++) {
+                if( dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str()) ) {
+                    if(n>0) print_if_possible(fgMsg, "Preamble dependency detected: " + preamb_deps[n].Relative(sCurrDir) + "\n");
                 }
                 else
-                    print_if_possible(fgIgnoredfile, "Preamble dependency detected but cannot be opened: " + preamb_deps[n].Relative(sCurrDir) + "\n");
+                {
+                    if( n == 0  ) {
+                        print_if_possible(fgErr, "The preamble file " + preamble_filename + " cannot be found or opened!\n" );
+                        hWatchingThread = NULL;
+                        delete dg_deps;
+                        delete dg_preamb_deps;
+                        return;
+                    }
+                    else
+                        print_if_possible(fgIgnoredfile, "Preamble dependency detected but cannot be opened: " + preamb_deps[n].Relative(sCurrDir) + "\n");
+                }
             }
         }
 
@@ -1690,38 +1727,18 @@ void WINAPI WatchingThread( void *param )
         for(size_t i=0;i<nWdi;i++)
             hp[i+nHdReserved] = watchdirs[i]->overl.hEvent;
 
-        int iTriggeredDir = -1; // index of the last directory in which a change has been detected
+        int iTriggeredDir; // index of the last directory in which a change has been detected
         while( 1 ) {
-            if( iTriggeredDir != -1 ) {
-                // continue to watch the directory in which a change has just been detected
-                DWORD BytesReturned;
-                ReadDirectoryChangesW(
-                     watchdirs[iTriggeredDir]->hDir, /* handle to directory */
-                     &watchdirs[iTriggeredDir]->buffer, /* read results buffer */
-                     sizeof(watchdirs[iTriggeredDir]->buffer), /* length of buffer */
-                     FALSE, /* monitoring option */
-                     //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
-                     FILE_NOTIFY_CHANGE_LAST_WRITE
-                     //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
-                     , /* filter conditions */
-                     &BytesReturned, /* bytes returned */
-                     &watchdirs[iTriggeredDir]->overl, /* overlapped buffer */
-                     NULL); /* completion routine */
-
-                DWORD dwNumberbytes;
-                GetOverlappedResult(watchdirs[iTriggeredDir]->hDir, &watchdirs[iTriggeredDir]->overl, &dwNumberbytes, FALSE);
-            }
-
             DWORD dwRet = 0;
             DWORD dwObj = WaitForMultipleObjects(2+(DWORD)nWdi, hp, FALSE, INFINITE ) - WAIT_OBJECT_0;
             _ASSERT( dwObj >= 0 && dwObj <= nWdi+nHdReserved );
             if( dwObj == 0 ) { // the user asked to quit the program
-                bDepChange = false;
+                bContinue = false;
                 goto clean;
             }
             else if ( dwObj == 1 ) { // notification of depend change
                 print_if_possible(fgMsg, "\n-- Dependencies have changed\n" );
-                bDepChange = true;
+                bContinue = true;
                 goto clean;
             }
             else if ( dwObj >= nHdReserved && dwObj < nWdi+nHdReserved) {
@@ -1729,13 +1746,38 @@ void WINAPI WatchingThread( void *param )
             }            
             else {
                 // BUG!
+                bContinue = false;
+                goto clean;
             }
+
+            // Read the asyncronous result
+            DWORD dwNumberbytes;
+            GetOverlappedResult(watchdirs[iTriggeredDir]->hDir, &watchdirs[iTriggeredDir]->overl, &dwNumberbytes, FALSE);
+
+            // Switch the 2 buffers
+            watchdirs[iTriggeredDir]->curBuffer =  1- watchdirs[iTriggeredDir]->curBuffer;
+
+            // continue to watch the directory in which a change has just been detected
+            DWORD BytesReturned;
+            ReadDirectoryChangesW(
+                 watchdirs[iTriggeredDir]->hDir, /* handle to directory */
+                 &watchdirs[iTriggeredDir]->buffer[watchdirs[iTriggeredDir]->curBuffer], /* read results buffer */
+                 sizeof(watchdirs[iTriggeredDir]->buffer[watchdirs[iTriggeredDir]->curBuffer]), /* length of buffer */
+                 FALSE, /* monitoring option */
+                 //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
+                 FILE_NOTIFY_CHANGE_LAST_WRITE
+                 //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
+                 , /* filter conditions */
+                 &BytesReturned, /* bytes returned */
+                 &watchdirs[iTriggeredDir]->overl, /* overlapped buffer */
+                 NULL); /* completion routine */
+
 
             //////////////
             // Check if some source file has changed and prepare the compilation requirement accordingly
             JOB makejob = Rest;
             FILE_NOTIFY_INFORMATION *pFileNotify;
-            pFileNotify = (PFILE_NOTIFY_INFORMATION)&watchdirs[iTriggeredDir]->buffer;
+            pFileNotify = (PFILE_NOTIFY_INFORMATION)&watchdirs[iTriggeredDir]->buffer[1-watchdirs[iTriggeredDir]->curBuffer];
             while( pFileNotify ) { 
 
                 // Convert the filename from unicode string to oem string
@@ -1766,7 +1808,7 @@ void WINAPI WatchingThread( void *param )
                         vector<CFilename>::iterator it = find(deps.begin(),deps.end(), modifiedfile);
                         if(it != deps.end() ) {
                             size_t i = it - deps.begin();
-                            if ( dg_new.DigestFile(it->c_str()) && (dg_deps[i]!=dg_new) ) {
+                            if ( dg_new.DigestFile(filename) && (dg_deps[i]!=dg_new) ) {
 	                            dg_deps[i] = dg_new;
 	                            print_if_possible(fgDepFile, string("+ \"") + it->Relative(sCurrDir) + "\" changed (dependency file).\n" );
 	                            makejob = max(Compile, makejob);
@@ -1780,7 +1822,7 @@ void WINAPI WatchingThread( void *param )
                             vector<CFilename>::iterator it = find(preamb_deps.begin(),preamb_deps.end(), modifiedfile);
                             if(it != preamb_deps.end() ) {
                                 size_t i = it - preamb_deps.begin();
-                                if ( dg_new.DigestFile(it->c_str()) && (dg_preamb_deps[i]!=dg_new) ) {
+                                if ( dg_new.DigestFile(filename) && (dg_preamb_deps[i]!=dg_new) ) {
                                     dg_preamb_deps[i] = dg_new;
                                     print_if_possible(fgDepFile, string("+ \"") + it->Relative(sCurrDir) + "\" changed (preamble dependency file).\n" );
                                     makejob = max(FullCompile, makejob);
@@ -1810,17 +1852,17 @@ void WINAPI WatchingThread( void *param )
         }
 
     clean:
-            for(size_t i=0; i<nWdi;i++) {
-                CloseHandle(watchdirs[i]->overl.hEvent);
-                CloseHandle(watchdirs[i]->hDir);
-                delete watchdirs[i];
-            }
-            delete hp;
+        for(size_t i=0; i<nWdi;i++) {
+            CloseHandle(watchdirs[i]->overl.hEvent);
+            CloseHandle(watchdirs[i]->hDir);
+            delete watchdirs[i];
+        }
+        delete hp;
 
 
-            delete dg_deps;
-            delete dg_preamb_deps;
-            hWatchingThread = NULL;
+        delete dg_deps;
+        delete dg_preamb_deps;
+        hWatchingThread = NULL;
     }
 }
 
