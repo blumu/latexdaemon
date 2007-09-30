@@ -8,11 +8,24 @@ PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName );
 
 class CFilename {
 public:
+    CFilename()
+    {
+        m_szFullpath[0] = '\0';
+        m_pszBasenamePart = m_szFullpath;
+    }
+
     CFilename(string str)
     {
         _tcscpy_s(m_szFullpath, _MAX_PATH, str.c_str());
         m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
     }
+
+    CFilename(const CFilename& _assign)
+    {
+        _tcscpy_s(m_szFullpath, _MAX_PATH, _assign.m_szFullpath);
+        m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
+    }
+
 
     operator string () {
         return string(m_szFullpath);
@@ -46,11 +59,18 @@ public:
         Rel2Abs(sRelPath.c_str(),m_szFullpath, _MAX_PATH, sCurrDir.c_str());
         m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
     }
+
+    CFilename& operator= (const CFilename& _assign)
+    {
+        CFilename::CFilename(_assign);
+        return *this;
+    }
+
     friend bool operator== (const CFilename& _Left, const CFilename& _Right);
 
 private:
     TCHAR   m_szFullpath[_MAX_PATH];
-    PCTSTR m_pszBasenamePart;
+    PCTSTR  m_pszBasenamePart;
 };
 
 bool operator== (const CFilename& _Left, const CFilename& _Right) {

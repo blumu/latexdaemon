@@ -10,8 +10,8 @@
 			>
 			<DebugSettings
 				Command="$(TargetPath)"
-				WorkingDirectory=""
-				CommandArguments="-filter=err+warn d:\documents\dphil\latex\Current\lmcs\lmcs.tex "
+				WorkingDirectory="d:\documents\dphil\latex\Current\"
+				CommandArguments="-filter=err+warn "
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

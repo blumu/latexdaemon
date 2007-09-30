@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"25 September 2007"
+#define VERSION_DATE	"30 September 2007"
 #define VERSION			0.9
-#define BUILD			"18"
+#define BUILD			"19"
 
 // See changelog.html for the list of changes:.
 
@@ -87,7 +87,7 @@ void WINAPI MakeThread( void *param );
 BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam);
 
 // TODO: move the following function to a proper class. After all we are programming in C++!
-int loadfile( CSimpleGlob *pnglob, JOB initialjob );
+int loadfile( CSimpleGlob &nglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
 DWORD fullcompile();
 DWORD compile();
@@ -122,6 +122,9 @@ bool Watch = true;
 
 // Automatic dependency detection (activated by default)
 bool Autodep = true;
+
+// Is some file loaded?
+bool FileLoaded = false;
 
 // what to do after compilation? (can be change using the -afterjob command argument)
 JOB afterjob = Rest;
@@ -170,10 +173,6 @@ string texbasename = "";
 // name of the backup file for the .aux file
 string auxbackupname = "";
 
-
-// This glob object contains the list of dependencies
-CSimpleGlob *pglob = NULL;
-
 // by default the output extension is set to ".dvi", it must be changed to ".pdf" if pdflatex is used
 string output_ext = ".dvi";
 
@@ -181,7 +180,10 @@ string output_ext = ".dvi";
 // Default command line arguments for Tex
 string texoptions = " -interaction=nonstopmode --src-specials -max-print-line=120 ";
 
-// automatic dependencies 
+// static dependencies (added by the user) including the main .tex file
+vector<CFilename> static_deps;
+
+// dependencies automatically detected
 vector<CFilename> auto_deps, auto_preamb_deps;
 
 // output filtering mode
@@ -370,7 +372,7 @@ void ReadDependencies(string filename, vector<CFilename> &deps)
                 if( NULL == GetFileExtPart(line, 0, NULL) ) {
                     _tcscat_s(line,_MAX_PATH, ".tex");
                 }
-                deps.push_back((string)line);
+                deps.push_back(CFilename(texdir, line));
             }
         }
         depFile.close();
@@ -495,7 +497,7 @@ void ExecuteOptionWatch( string optionarg )
 		EnterCriticalSection( &cs );
 		cout << fgNormal << "-File modification monitoring activated" << endl;
 		LeaveCriticalSection( &cs );
-		if( pglob && !hWatchingThread)
+		if( FileLoaded && !hWatchingThread )
 			RestartWatchingThread();
 	}
 	else {
@@ -781,10 +783,10 @@ void WINAPI CommandPromptThread( void *param )
 
             {
                 // parse the parameters (tex file name and dependencies)
-                CSimpleGlob *npglob = new CSimpleGlob(uiFlags);
-                if (SG_SUCCESS != npglob->Add(args.FileCount(), args.Files()) ) {
+                CSimpleGlob nglob(uiFlags);
+                if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
                     cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-                }				
+                }
                 else {
                     // if no argument is specified then we show a dialogbox to the user to let him select a file
                     if( args.FileCount() == 0 ){
@@ -812,7 +814,7 @@ void WINAPI CommandPromptThread( void *param )
                         // Display the Open dialog box. 
 
                         if (GetOpenFileName(&ofn)==TRUE) {
-                            if (SG_SUCCESS != npglob->Add(szFile) ) {
+                            if (SG_SUCCESS != nglob.Add(szFile) ) {
                                 cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
                                 goto err_load;
                             }
@@ -825,7 +827,7 @@ void WINAPI CommandPromptThread( void *param )
                     }
 
                     // Load the file
-                    if( loadfile(npglob, Rest) == 0 ) {
+                    if( loadfile(nglob, Rest) == 0 ) {
                         // Restart the watching thread
                         if( Watch )
                             RestartWatchingThread();
@@ -887,6 +889,7 @@ err_load:
 
 int _tmain(int argc, TCHAR *argv[])
 {
+
     SetTitle("prompt");
 
     cout << endl << fgNormal << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
@@ -956,14 +959,13 @@ int _tmain(int argc, TCHAR *argv[])
         uiFlags |= (unsigned int) args.OptionId();
     }
 
-
-    int ret = -1;
-    CSimpleGlob *nglob = new CSimpleGlob(uiFlags);
+    int ret = -1;    
     if( args.FileCount() == 0 ){
         cout << fgWarning << _T("No input file specified.\n") << fgNormal;
     }
     else {
-        if (SG_SUCCESS != nglob->Add(args.FileCount(), args.Files()) ) {
+        CSimpleGlob nglob(uiFlags);
+        if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
             cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
             goto exit;
         }
@@ -979,8 +981,6 @@ int _tmain(int argc, TCHAR *argv[])
         CommandPromptThread(NULL);
     }
 
-    if(pglob)
-        delete pglob;
 exit:	
     DeleteCriticalSection(&cs);
     CloseHandle(hEvtAbortMake);
@@ -996,73 +996,83 @@ bool FileExists( LPCTSTR filename ) {
     return 0 == stat( filename, &buffer );
 }
 
-// Load the .tex file specified in the first argument of args, the remainings arguements are
-// the dependencies of the .tex file.
-int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
+// Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
+int loadfile( CSimpleGlob &depglob, JOB initialjob )
 {
-	cout << "-Main file: '" << pnewglob->File(0) << "'\n";
+    if(depglob.FileCount() == 0) {
+        return 1;
+    }
 
-	TCHAR drive[4];
-	TCHAR mainfile[_MAX_FNAME];
-	TCHAR ext[_MAX_EXT];
-	TCHAR fullpath[_MAX_PATH];
-	TCHAR dir[_MAX_DIR];
+    TCHAR drive[4];
+    TCHAR mainfile[_MAX_FNAME];
+    TCHAR ext[_MAX_EXT];
+    TCHAR fullpath[_MAX_PATH];
+    TCHAR dir[_MAX_DIR];
 
-	_fullpath( fullpath, pnewglob->File(0), _MAX_PATH );
-	_tsplitpath( fullpath, drive, dir, mainfile, ext );
+    _fullpath( fullpath, depglob.File(0), _MAX_PATH );
+    _tsplitpath( fullpath, drive, dir, mainfile, ext );
 
-	// set the global variables
-	texfullpath = fullpath;
-	texdir = string(drive) + dir;
-	texbasename = mainfile;
-	auxbackupname = texbasename+".aux.bak";
+    if(  _tcsncmp(ext, ".tex", 4) )	{
+        cerr << fgErr << "Error: this file does not seem to be a TeX document!\n\n" << fgNormal;
+        return 2;
+    }
 
+    // set the global variables
+    texfullpath = fullpath;
+    texdir = string(drive) + dir;
+    texbasename = mainfile;
+    auxbackupname = texbasename+".aux.bak";
 
-	// set console title
-	SetTitle("Initialization");
-
-	cout << "-Directory: " << drive << dir << "\n";
-
-	if(  _tcsncmp(ext, ".tex", 4) )	{
-		cerr << fgErr << "Error: the file has not the .tex extension!\n\n" << fgNormal;
-		delete pnewglob;
-		return 1;
-	}
-	if( pnewglob->FileCount()>1 ) {
-		cout << "-Dependencies manually added:\n";
-		for (int n = 1; n < pnewglob->FileCount(); ++n)
-			_tprintf(_T("  %2d: '%s'\n"), n, pnewglob->File(n));
-	}
-	else
-		cout << "-No additional dependency specified.\n";
-		
-	if(pnewglob->FileCount() == 0) {
-		delete pnewglob;
-		return 1;
-	}
-
-	// change current directory
-	_chdir(texdir.c_str());
+    // set console title
+    SetTitle("Initialization");
+    cout << "-Main file: '" << fullpath << "'\n";
+    cout << "-Directory: " << drive << dir << "\n";
+    
+    FileLoaded = false; // will be set to true when the loading is finished
 
 
-	// check for the presence of the external preamble file
-	if( LookForExternalPreamble ) {
-		// compare the timestamp of the preamble.tex file and the format file
-		preamble_filename = string(mainfile) + "." DEFAULTPREAMBLE1_EXT;
-		preamble_basename = string(mainfile);
+    // clear the dependency list
+    auto_deps.clear();
+    auto_preamb_deps.clear();
+    static_deps.clear();
+
+
+    if( depglob.FileCount()>1 ) 
+        cout << "-Dependencies manually added:\n";
+    else
+        cout << "-No additional dependency specified.\n";
+
+    // Add the static dependencies. We change all the relative paths to make them relative to the main .tex file dir
+    TCHAR tmpfullpath[_MAX_PATH];
+          //tmprelpath[_MAX_PATH];
+    for(int i=0; i<depglob.FileCount(); i++) {
+        if( i > 0 ) _tprintf(_T("  %2d: '%s'\n"), i, depglob.File(i));
+        _fullpath( tmpfullpath, depglob.File(i), _MAX_PATH );
+        //Abs2Rel(tmpfullpath, tmprelpath, _MAX_PATH, texdir.c_str());
+        static_deps.push_back(CFilename(tmpfullpath));
+    }
+
+    // change current directory
+    _chdir(texdir.c_str());
+
+    // check for the presence of the external preamble file
+    if( LookForExternalPreamble ) {
+        // compare the timestamp of the preamble.tex file and the format file
+        preamble_filename = string(mainfile) + "." DEFAULTPREAMBLE1_EXT;
+        preamble_basename = string(mainfile);
         ExternalPreamblePresent = FileExists(preamble_filename.c_str());
-		if ( !ExternalPreamblePresent ) {
-			// try with the second default preamble name
-			preamble_filename = DEFAULTPREAMBLE2_FILENAME;
-			preamble_basename = DEFAULTPREAMBLE2_BASENAME;
+        if ( !ExternalPreamblePresent ) {
+            // try with the second default preamble name
+            preamble_filename = DEFAULTPREAMBLE2_FILENAME;
+            preamble_basename = DEFAULTPREAMBLE2_BASENAME;
             ExternalPreamblePresent = FileExists(preamble_filename.c_str());
-			if ( !ExternalPreamblePresent ) {
-				cout << fgWarning << "Warning: Preamble file not found! (I have looked for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
-			}
-		}
-	}
-	else
-		ExternalPreamblePresent = false;
+            if ( !ExternalPreamblePresent ) {
+	            cout << fgWarning << "Warning: Preamble file not found! (I have looked for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
+            }
+        }
+    }
+    else
+        ExternalPreamblePresent = false;
 
 
     ////////////////////////////////
@@ -1082,9 +1092,9 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
         cout << "-Preamble file: " << preamble_filename << "\n";
 
         // compare the timestamp of the preamble file with the format file
-	    int res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
-		
-		// If the format file is older than the preamble file
+        int res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+".fmt").c_str());
+
+        // If the format file is older than the preamble file
         if( res == SRC_FRESHER ) {
             // then it is necessary to recreate the format file and to perform a full recompilation
             job = FullCompile;
@@ -1125,8 +1135,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
 
         if ( maintex_comp & ERR_SRCABSENT ) {
             cout << fgErr << "File " << mainfile << ".tex not found!\n" << fgNormal;
-            delete pnewglob;
-            return 2;
+            return 3;
         }
         else if ( maintex_comp & ERR_OUTABSENT ) {
             cout << fgMsg << "+ " << mainfile << output_ext << " does not exist. Let's create it...\n";
@@ -1139,14 +1148,14 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
         else { // maintex_comp == OUT_FRESHER 
 
             // check if some manual dependency file has been modified since the creation of the dvi file
-            for(int i=1; i<pnewglob->FileCount(); i++)
-                if( SRC_FRESHER == compare_timestamp(pnewglob->File(i), (texbasename+output_ext).c_str()) ) {
-                    cout << fgMsg << "+ The file " << pnewglob->File(i) << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
+            for(vector<CFilename>::iterator it = static_deps.begin(); it!=static_deps.end(); it++)                
+                if( SRC_FRESHER == compare_timestamp(it->c_str(), (texbasename+output_ext).c_str()) ) {
+                    cout << fgMsg << "+ The file " << it->Relative(texdir.c_str()) << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
                     job = Compile;
                     break;
                 }
 
-            // Check if some automatic dependencies has been tooched
+            // Check if some automatic dependencies has been touched
             if( job != FullCompile )
                 for(vector<CFilename>::iterator it = auto_deps.begin();
                     it!= auto_deps.end(); it++)
@@ -1166,11 +1175,7 @@ int loadfile( CSimpleGlob *pnewglob, JOB initialjob )
         make(job);
     }
 
-
-    // replace the current active file
-    if( pglob )
-        delete pglob;
-    pglob = pnewglob;
+    FileLoaded = true;
 
     return 0;
 }
@@ -1709,7 +1714,7 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
 // Thread responsible of watching the directory and launching compilation when a change is detected
 void WINAPI WatchingThread( void *param )
 {
-    if( !pglob ) {
+    if( static_deps.size() == 0 ) {
         hWatchingThread = NULL;
         return;
     }
@@ -1734,12 +1739,12 @@ void WINAPI WatchingThread( void *param )
         ///// Dependencies of the main .tex file
         vector<CFilename> deps;
         // Add the manual dependencies (the first one is the main tex file)
-        for (int n = 0; n < pglob->FileCount(); ++n)
-            deps.push_back(CFilename(sCurrDir,pglob->File(n)));
+        for (vector<CFilename>::iterator it = static_deps.begin(); it != static_deps.end(); it++)
+            deps.push_back(*it);
         // load the depencies automatically generated by the last compilation of the main tex file
         if( Autodep )
             for(vector<CFilename>::iterator it = auto_deps.begin(); it!=auto_deps.end();it++)
-                deps.push_back(CFilename(sCurrDir,*it));
+                deps.push_back(*it);
        
         ////// get the digest of the dependcy files
         md5 *dg_deps = new md5 [deps.size()];
