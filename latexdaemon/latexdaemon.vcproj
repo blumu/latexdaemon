@@ -184,6 +184,14 @@
 				>
 			</File>
 			<File
+				RelativePath=".\global.h"
+				>
+			</File>
+			<File
+				RelativePath=".\LatexOutputFilters.h"
+				>
+			</File>
+			<File
 				RelativePath=".\md5.h"
 				>
 			</File>
@@ -213,6 +221,10 @@
 			</File>
 			<File
 				RelativePath=".\CommandLineToArgv.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\LatexOutputFilters.cpp"
 				>
 			</File>
 			<File

@@ -12,7 +12,7 @@ timethis latex -interaction=nonstopmode --src-specials "\edef\TheAtCode{\the\cat
 @echo.
 
 :withdaemon
-timethis %DAEMON% -watch=no -force compile -filter err lmcs.tex
+timethis %DAEMON% -watch=no -force compile -filter=highlight lmcs.tex
 
 
 :fin

@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"14"
+#define BUILD			"16"
 
 // See changelog.html for the list of changes:.
 
@@ -18,9 +18,6 @@
 // - Implement the InternalPreamble feature. In this mode, the preamble is automatically extracted from the main
 //   .tex file and there is no need to create a separate preamble file
 //
-// -  Latex output filtering. Add an option -filter={err|err+warn|warn|*}. The * filter mode
-//    corresponds to the current mode where all the latex output is dumped to the console.
-//    In other modes, the daemon filters the output and prints only error messages and/or warnings
 ////////////////
 
 ////////////////////
@@ -58,21 +55,15 @@
 #include "path_conv.h"
 #include "CFilename.h"
 #include "redir.h"
+#include "LatexOutputFilters.h"
+#include "global.h"
 using namespace std;
 
 
 //////////
 /// Constants 
 
-// console colors used
-#define fgMsg			JadedHoboConsole::fg_green
-#define fgErr			JadedHoboConsole::fg_red
-#define fgWarning		JadedHoboConsole::fg_yellow
-#define fgLatex			JadedHoboConsole::fg_lowhite
-#define fgIgnoredfile	JadedHoboConsole::fg_gray
-#define fgNormal		JadedHoboConsole::fg_lowhite
-#define fgDepFile		JadedHoboConsole::fg_cyan
-#define fgPrompt		JadedHoboConsole::fg_locyan
+
 
 #define DEFAULTPREAMBLE2_BASENAME       "preamble"
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME ".tex"
@@ -95,15 +86,12 @@ using namespace std;
 // constants corresponding to the different possible jobs that can be exectuted
 enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3 } ;
 
-// constants corresponding to the different possible output filtering mode
-enum FILTER  { NoFilter = 0, ErrFilter, WarnFilter, ErrWarnFilter };
-
 
 
 //////////
 /// Prototypes
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
-DWORD launch_and_wait(LPCTSTR cmdline);
+DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt=Raw);
 void RestartWatchingThread();
 void WINAPI CommandPromptThread( void *param );
 void WINAPI WatchingThread( void *param );
@@ -204,13 +192,13 @@ string output_ext = ".dvi";
 
 
 // Default command line arguments for Tex
-string texoptions = " -interaction=nonstopmode --src-specials";
+string texoptions = " -interaction=nonstopmode --src-specials -max-print-line=120 ";
 
 // automatic dependencies 
 vector<CFilename> auto_deps, auto_preamb_deps;
 
 // output filtering mode
-FILTER Filter;
+FILTER Filter = Highlight;
 
 
 // type of the parameter passed to the "make" thread
@@ -266,8 +254,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_AUTODEP,		_T("--autodep"),	SO_REQ_CMB },
     { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
     { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
-    { OPT_FILTER,		_T("-filter"),		SO_REQ_SEP },
-    { OPT_FILTER,		_T("--filter"),		SO_REQ_SEP },
+    { OPT_FILTER,		_T("-filter"),		SO_REQ_CMB },
+    { OPT_FILTER,		_T("--filter"),		SO_REQ_CMB },
     { OPT_GSVIEW,		_T("--gsview"),		SO_NONE },
     { OPT_GSVIEW,		_T("-gsview"),		SO_NONE },	
     SO_END_OF_OPTIONS                   // END
@@ -291,7 +279,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
     { OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
-    { OPT_FILTER,		_T("-filter"),		SO_REQ_SEP  },
+    { OPT_FILTER,		_T("-filter"),		SO_REQ_CMB  },
     { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
     { OPT_AUTODEP,		_T("-autodep"),     SO_REQ_CMB  },
@@ -343,8 +331,8 @@ void ShowUsage(TCHAR *progname) {
          << " --afterjob={dvips|rest}" << endl 
          << "   . 'dvips' specifies that dvips should be run after a successful compilation of the .tex file," <<endl
          << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
-         << " --filter={*|err|warn|err+warn}" << endl 
-         << "   . Set the latex output filtering mode." <<endl <<endl
+         << " --filter={highlight|raw|err|warn|err+warn}" << endl 
+         << "   . Set the latex output filtering mode. Default: highlight" <<endl <<endl
          << " --preamble={none|external}" << endl 
          << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
          << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically deactivated."<<endl
@@ -540,24 +528,28 @@ void ExecuteOptionOutputFilter( string optionarg )
 {
     string filtermessage;
     if( optionarg == "err" ) {
-        Filter = ErrFilter;
-        filtermessage = "error messages only";
+        Filter = ErrOnly;
+        filtermessage = "show error messages only";
     }
     else if( optionarg == "warn" ) {
-        Filter = WarnFilter;
-        filtermessage = "warning messages only";
+        Filter = WarnOnly;
+        filtermessage = "show warning messages only";
     }
     else if( optionarg == "err+warn" || optionarg == "warn+err" ) {
-        Filter = ErrWarnFilter;
-        filtermessage = "error and warning messages only";
+        Filter = ErrWarnOnly;
+        filtermessage = "show error and warning messages only";
     }
-    else {
-        Filter = NoFilter;
-        filtermessage = "entire output";
+    else if( optionarg == "raw" ) {
+        Filter = Raw;
+        filtermessage = "raw";
+    }
+    else { // if( optionarg == "highlight" ) {
+        Filter = Highlight;
+        filtermessage = "highlight error and warning messages";
     }
 
     EnterCriticalSection( &cs );
-    cout << "-Latex output filtering set to: " << filtermessage << endl;
+    cout << "-Latex output: " << filtermessage << endl;
     LeaveCriticalSection( &cs );
 }
 
@@ -774,7 +766,7 @@ void WINAPI CommandPromptThread( void *param )
                  << "  autodep={yes,no}          activate/deactivate automatic dependency detection" << endl
                  << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
                  << "  watch={yes,no}            activate/deactivate file modification watching" << endl 
-                 << "  filtering={*|err|warn|err+warn}  set the filtering mode for latex ouput" << endl << endl;
+                 << "  filtering={highlight|raw|err|warn|err+warn}  set the filtering mode for latex ouput. Default: highlight" << endl << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
@@ -1214,7 +1206,7 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 
 // Launch an external program and wait for its termination or for an abortion (set with the 
 // hEvtAbortMake event)
-DWORD launch_and_wait(LPCTSTR cmdline)
+DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
 {
     LPTSTR szCmdline= _tcsdup(cmdline);
 
@@ -1224,9 +1216,9 @@ DWORD launch_and_wait(LPCTSTR cmdline)
     EnterCriticalSection( &cs );
     ExecutingExternalCommand = true;
 
-
-    CRedirector redir(cout);
-    if( ! redir.Open(szCmdline, Filter != NoFilter ) )
+    ostreamLatexFilter filtstream(cout.rdbuf(), filt);
+    CRedirector redir((filt != Raw) ? &filtstream : NULL);
+    if( !redir.Open(szCmdline) )
     {
         dwRet = GetLastError();
         cout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
@@ -1320,7 +1312,7 @@ DWORD fullcompile()
         cout << fgMsg << "-- Creation of the format file...\n";
         cout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
-        DWORD ret = launch_and_wait(cmdline.c_str());
+        DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
         if( ret )
             return ret;
     }
@@ -1428,7 +1420,7 @@ DWORD compile()
     cout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
 
-    return launch_and_wait(cmdline.c_str());
+    return launch_and_wait(cmdline.c_str(), Filter);
 }
 
 

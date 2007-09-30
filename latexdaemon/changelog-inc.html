@@ -1,10 +1,18 @@
-<p class="date"> 29 September 2007 - Version 0.9 Build 15 </p>
+<p class="date"> 30 September 2007 - Version 0.9 Build 16 </p>
 <ul>
 	<li>New feature: automatic detection of dependencies. Use the '-autodep=no' switch to deactivate it. 
 	In this mode, the daemon detects automatically the list of files used by the main tex file and the 
-	preamble file. It then watches for changes in these files and trigger a latex recompilation if necessary when a modification occurs.
+	preamble file. It then watches for changes in these files and trigger a LaTex recompilation if necessary when a modification occurs.
 	If the dependency files reside in different directories then each of these directories will be monitored by LatexDaemon.
 	</li>
+	<li> New feature: LaTex output filtering. A new command line argument '-filter={highlight|raw|err|err+warn|warn}'
+        allows you to activate the filtering of LaTex output. The raw filter mode
+        corresponds to the standard behaviour where the entire LaTex output is dumped to the console.
+        In modes 'err', 'err+warn' and 'warn', the daemon filters the output so that only error 
+        and/or warnings messages appear. In 'highlight' mode, the entire output is shown with the warning and error messages
+        highlighted.
+	</li>
+
 </ul>
 
 <p class="date"> 29 August 2007 - Version 0.9 Build 10 </p>
@@ -24,10 +32,10 @@
 		file association says differently). The path to gsview
 		is determined by fetching the default value of the key 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\gsview32.exe' from
 		the Registry. The advantage of using gsview over Adobe Reader is that gsview does not lock the file therefore the editor can be kept
-		open during recompilation of the .tex file. Moreover, LatexDaemon sends notification message to GSWin32 to force a refresh
+		open during recompilation of the .tex file. Moreover, LaTexDaemon sends notification message to GSWin32 to force a refresh
 		of the page as soon as it finishes the conversion from .dvi to .ps (this can be automated with the -afeterjob option).
 		Consequently, you don't need to click on the Ghostview window to see the effect of your changes. This greatly improves
-		the speed of the Latex edit-compile-view cycle.
+		the speed of the LaTex edit-compile-view cycle.
 		
 	</li>
 </ul>
@@ -38,9 +46,9 @@
 	<li>The watching thread can be started and stopped just by changing the value of the watch variable to yes or no.</li>
 	<li>The .aux file is now backed up before compilation and restored if the compilation has aborted.<br />		
 		Suppose for	instance that the user edits and saves the .tex file then the daemon will
-		detect the modification and runs latex. If the user saves once more before the first compilation has finished
+		detect the modification and runs LaTex. If the user saves once more before the first compilation has finished
 		then, as in previous version, the daemon will abort the first compilation. However this operation corrupts
-		the .aux file since latex writes this file during the compilation. With the new version of the daemon, such situation will
+		the .aux file since LaTex writes this file during the compilation. With the new version of the daemon, such situation will
 		be recovered by restoring the backup copy of the .aux file.
 	</li>
 	<li>The command line options -forcecompile and -forcefullcompile have merged into the command line option
@@ -87,12 +95,12 @@
 </ul>
 <p class="date"> 28 feb 2007 - Version 0.9 Build 1 </p>
 <ul>
-        <li> When looking for the preamble file, it first searches for a file with the same base name as the tex file but with the .pre extension, if it does not exists it then looks for preamble.tex. This allows to have several main latex files in the same directory each of them having its own preamble file.
+        <li> When looking for the preamble file, it first searches for a file with the same base name as the tex file but with the .pre extension, if it does not exists it then looks for preamble.tex. This allows to have several main LaTex files in the same directory each of them having its own preamble file.
         </li>
         <li>  change: option "-noextpreamble" now becomes "-preamble={none|external}:
         <ul>
                 <li>Set to 'none', it specifies that the main .tex file does not use an external preamble file. The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used the precompilation feature will be automatically desactivated.</li>
-                <li> Set to 'external' (default), it specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exists it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option.   If these files exist but do not correspond to the preamble of your latex document (i.e. not included with \input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong  preamble. </li>
+                <li> Set to 'external' (default), it specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exists it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option.   If these files exist but do not correspond to the preamble of your LaTex document (i.e. not included with \input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong  preamble. </li>
         </ul>
         </li>
 </ul>
@@ -134,9 +142,9 @@ ensure that the file content is not modified while computing the digest.</li>
 
 <p class="date"> 8 December 2006 - Version 0.5 </p>
 <ul>
-        <li>new: latex is executed in a separate thread. This permits to interrupt and restart the compilation if
+        <li>new: LaTex is executed in a separate thread. This permits to interrupt and restart the compilation if
         a source file is modified during compilation. </li>
-        <li>new: the title of the console indicates if some errors occured during Latex compilation. </li>
+        <li>new: the title of the console indicates if some errors occured during LaTex compilation. </li>
 </ul>
 
 <p class="date"> 7 December 2006 - Version 0.4 </p>
@@ -144,7 +152,7 @@ ensure that the file content is not modified while computing the digest.</li>
         <li>Change: compute the MD5 digest instead of the CRC. </li>
         <li>New: it is now possible to specify additional dependency files at the command line using globling (for instance *.tex)
                   The first file being the main tex file. </li>
-        <li>New: console colors to distinguish Latex output from the daemon output. </li>
+        <li>New: console colors to distinguish LaTex output from the daemon output. </li>
 </ul>
 
 <p class="date"> 29 September 2006 - Version 0.3</p>
