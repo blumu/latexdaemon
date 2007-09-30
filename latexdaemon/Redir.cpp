@@ -16,7 +16,7 @@
 using namespace std;
 
 //#define _TEST_REDIR
-#define BUFF_SIZE   1024
+#define BUFF_SIZE   4024
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -307,7 +307,7 @@ int CRedirector::RedirectStdout()
 
         DWORD dwRead = 0;
         if (!::ReadFile(m_hStdoutRead, szOutput, min(sizeof(szOutput)-1, dwAvail),
-            &dwRead, NULL) || !dwRead)	// error, the child might ended
+            &dwRead, NULL) || !dwRead)	// error, the child might have ended
             break;
 
         szOutput[dwRead] = 0;

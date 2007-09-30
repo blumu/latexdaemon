@@ -44,7 +44,6 @@ typedef stack<char*> StackPtrChar;
 
 void GetCurrentDir(char* pcTmp);
 
-char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, const char* pcCurrDir);
-
-char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, const char* pcCurrDir);
+char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const char* pcCurrDir);
+char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const char* pcCurrDir);
 

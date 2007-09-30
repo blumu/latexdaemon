@@ -16,35 +16,37 @@
 // Description	: Convert absolute path to relative path.
 // Parameter	: pcAbsPath - Input - Absolute path
 // Parameter	: pcRelPath - Output - Relative path
+// Parameter	: sizeInBytes - Input - size of the pcRelPath buffer in bytes
 // Parameter	: pcCurrDir - Input - Current Dir/Reference dir path
 // Return		: Relative path
 // Author		: Boby Thomas Pazheparampil April 2006
 //------------------------------------------------------------------------------
-char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, const char* pcCurrDir)
+char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const char* pcCurrDir)
 {
 
 	char acTmpCurrDir[MAX_PATH];
 	char acTmpAbsPath[MAX_PATH];
-	strcpy(acTmpCurrDir,pcCurrDir);
-	strcpy(acTmpAbsPath,pcAbsPath);
+	strcpy_s(acTmpCurrDir,pcCurrDir);
+	strcpy_s(acTmpAbsPath,pcAbsPath);
 	
 	StackPtrChar tmpStackAbsPath;
 	StackPtrChar tmpStackCurrPath;
 	StackPtrChar tmpStackOutput;
 	QueuePtrChar tmpMatchQueue;
 	
-	char *sTmp = strtok(acTmpAbsPath,path_separator);
+    char *nextToken;
+	char *sTmp = strtok_s(acTmpAbsPath,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackAbsPath.push(sTmp);
-		sTmp = strtok(0, path_separator);
+		sTmp = strtok_s(NULL, path_separator, &nextToken);
 	}
 
-	sTmp = strtok(acTmpCurrDir,path_separator);
+	sTmp = strtok_s(acTmpCurrDir,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackCurrPath.push(sTmp);
-		sTmp = strtok(0, path_separator);
+		sTmp = strtok_s(NULL, path_separator, &nextToken);
 	}
 
 	sTmp = pcRelPath;
@@ -97,42 +99,44 @@ char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, const char* pcCurrDir)
 // Description	: Convert absolute path to relative path.
 // Parameter	: pcRelPath - Input - Relative path
 // Parameter	: pcAbsPath - Output - Absolute path
+// Parameter	: sizeInBytes - Input - size of the pcAbsPath buffer in bytes
 // Parameter	: pcCurrDir - Input - Current Dir/Reference dir path
 // Return		: Absolute path
 // Author		: Boby Thomas Pazheparampil April 2006
 //------------------------------------------------------------------------------
 
-char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, const char* pcCurrDir)
+char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const char* pcCurrDir)
 {
     ////////////////
     // Modification by William Blum
     if(!PathIsRelative(pcRelPath)) {
-        strcpy(pcAbsPath, pcRelPath);
+        strcpy_s(pcAbsPath, sizeInBytes, pcRelPath);
         return pcAbsPath;
     }
     //////////////////
 
 	char acTmpCurrDir[MAX_PATH];
 	char acTmpRelPath[MAX_PATH];
-	strcpy(acTmpCurrDir,pcCurrDir);
-	strcpy(acTmpRelPath,pcRelPath);
+	strcpy_s(acTmpCurrDir,pcCurrDir);
+	strcpy_s(acTmpRelPath,pcRelPath);
 	
 	QueuePtrChar tmpQueueRelPath;
 	StackPtrChar tmpStackCurrPath;
 	StackPtrChar tmpStackOutPath;
 	
-	char *sTmp = strtok(acTmpRelPath,path_separator);
+    char *nextToken;
+	char *sTmp = strtok_s(acTmpRelPath,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpQueueRelPath.push(sTmp);
-		sTmp = strtok(0, path_separator);
+		sTmp = strtok_s(NULL, path_separator, &nextToken);
 	}
 
-	sTmp = strtok(acTmpCurrDir,path_separator);
+	sTmp = strtok_s(acTmpCurrDir,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackCurrPath.push(sTmp);
-		sTmp = strtok(0, path_separator);
+		sTmp = strtok_s(NULL, path_separator, &nextToken);
 	}
 
 

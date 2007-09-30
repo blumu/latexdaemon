@@ -4,117 +4,96 @@
 #include "Console.h"
 #include "global.h"
 
-buffLatexFilter::buffLatexFilter(streambuf *sb, FILTER filter):
+
+/// altought the constructor allow to specify a buffer size, the current implementation
+/// only works if bsize==0 i.e. in unbuffered mode.
+buffLatexFilter::buffLatexFilter(streambuf *sb, FILTER filter, int bsize):
       streambuf(),
       m_sbuf(sb),
       m_filtermode(filter),
-      m_newline(true),
       m_curline(""),
-      m_cache(EOF)
+      m_lookforlinenumber(false)
 {
-  // All buffering is deferred to the actually used streambuf
-  setp(0, 0); // no put buffer
-  setg(0, 0, 0); // no get buffer
+    if (bsize) {
+        char *ptr = new char[bsize];
+        setp(ptr, ptr + bsize);
+    }
+    else
+        setp(0, 0); // no put-buffer
+
+    setg(0, 0, 0); // no get-buffer
+
 }
 
 buffLatexFilter::~buffLatexFilter()
 {
-}
-/*
-bool buffLatexFilter::skip_prefix()
-{
-  char buf[4];
-  if (i_sbuf->sgetn(buf, 4) != 4)
-    return false;
-  if (strncmp(buf, "TOTO", 4))
-  {
-    // an expection could be thrown here...
-    return false;
-  }
-  i_newline = false;
-  return true;
+    sync();
+    delete[] pbase();
 }
 
-
-int buffLatexFilter::underflow()
-{
-  if (i_cache == EOF)
-  {
-    if (i_newline)
-      if (!skip_prefix())
-	return EOF;
-
-    i_cache = i_sbuf->sbumpc();
-    if (i_cache == '\n')
-      i_newline = true;
-    return i_cache;
-  }
-  else
-    return i_cache;
-}
-
-int	buffLatexFilter::uflow()
-{
-  if (i_cache == EOF)
-  {
-    if (i_newline)
-      if (!skip_prefix())
-	return EOF;
-    
-int rc = i_sbuf->sbumpc();
-    if (rc == '\n')
-      i_newline = true;
-    return rc;
-  }
-  {
-    int rc = i_cache;
-    i_cache = EOF;
-    return rc;
-  }
-}
-*/
-int buffLatexFilter::overflow(int c)
-{
-  if (c != EOF) {
-    if (m_newline)
-        m_newline = false;
-
-    m_curline += c;
-    if (c == '\n') {
-        /// print the line just read
-        if( strncmp(m_curline.c_str(), "Overfull", 8) == 0 
-            || strncmp(m_curline.c_str(), "Underfull",9) == 0 
-            || strncmp(m_curline.c_str(), "LaTeX Warning",13) == 0 )
-        {
-            if( m_filtermode == WarnOnly || m_filtermode == ErrWarnOnly || m_filtermode ==  Highlight ) {
-                JadedHoboConsole::console.SetColor( _fgWarning, JadedHoboConsole::bgMask );
-                m_sbuf->sputn("  ",2);
-                m_sbuf->sputn(m_curline.c_str(), m_curline.size());
-            }
-        }
-        else if ( m_curline.c_str()[0] == '!') {
-            if( m_filtermode == ErrOnly || m_filtermode == ErrWarnOnly || m_filtermode ==  Highlight ) {
-                JadedHoboConsole::console.SetColor( _fgErr, JadedHoboConsole::bgMask );
-                m_sbuf->sputn("  ",2);
-                m_sbuf->sputn(m_curline.c_str(), m_curline.size());
-            }
-        }
-        else if( m_filtermode == Highlight ) {
-            JadedHoboConsole::console.SetColor( _fgLatex, JadedHoboConsole::bgMask );
-            m_sbuf->sputn("  ",2);
-            m_sbuf->sputn(m_curline.c_str(), m_curline.size());
-        }
-        m_newline = true;
-        m_curline = "";
-    }
-    return c;
-  }
-  return 0;
-}
-/*
 int buffLatexFilter::sync()
 {
-  i_sbuf->sync();
-  return 0;
+    return 0;
 }
-*/
+
+
+/// send the content of m_curline
+void buffLatexFilter::put_buff()
+{
+    m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
+    m_curline = "";
+}
+
+/// send the last line read to the external streambuffer
+void buffLatexFilter::put_newline_buff()
+{
+    if( m_lookforlinenumber && strncmp(m_curline.c_str(), "l.", 2) == 0  ) {
+        JadedHoboConsole::console.SetColor( _fgLineNumber, JadedHoboConsole::bgMask );
+        m_sbuf->sputn("  ",2);
+        m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
+
+        m_lookforlinenumber = false;
+    }
+    else if( strncmp(m_curline.c_str(), "Overfull", 8) == 0 
+            || strncmp(m_curline.c_str(), "Underfull",9) == 0 
+            || strncmp(m_curline.c_str(), "LaTeX Warning",13) == 0 )
+    {
+        if( m_filtermode == WarnOnly || m_filtermode == ErrWarnOnly || m_filtermode ==  Highlight ) {
+            JadedHoboConsole::console.SetColor( _fgWarning, JadedHoboConsole::bgMask );
+            m_sbuf->sputn("  ",2);
+            m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
+        }
+    }
+    else if ( m_curline.c_str()[0] == '!') {
+        if( m_filtermode == ErrOnly || m_filtermode == ErrWarnOnly || m_filtermode ==  Highlight ) {
+            JadedHoboConsole::console.SetColor( _fgErr, JadedHoboConsole::bgMask );
+            m_sbuf->sputn("  ",2);
+            m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
+            m_lookforlinenumber = true;
+        }
+    }
+    else if( m_filtermode == Highlight ) {
+        JadedHoboConsole::console.SetColor( _fgLatex, JadedHoboConsole::bgMask );
+        m_sbuf->sputn("  ",2);
+        m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
+    }
+    m_curline = "";
+}
+
+
+
+int buffLatexFilter::overflow(int c)
+{
+  if (c == EOF) {
+    put_newline_buff();
+    return 0;
+  }
+  else {
+    m_curline += c;
+    if (c == '\n')
+        put_newline_buff();
+    return c;
+  }
+}
+
+

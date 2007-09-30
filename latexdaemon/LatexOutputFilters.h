@@ -15,21 +15,20 @@ class buffLatexFilter : public streambuf
 {
 private:
     streambuf       *m_sbuf;    // the actual streambuf used to read and write chars
-    bool            m_newline;  // remember whether we are at a new line
-    int             m_cache;    // may cache a read character
-    string          m_curline;   // line currently read
+    string          m_curline;  // line currently read
 
     FILTER          m_filtermode;
-    //bool            skip_prefix();
+    bool            m_lookforlinenumber;
 
 protected:
-    int	overflow(int);
-    //int	underflow();
-    //int	uflow();
-    //int	sync();
+    int overflow(int);
+    int sync();
 
-public:   
-    buffLatexFilter(streambuf *sb, FILTER filtermode = Highlight);
+    void put_newline_buff();
+    void put_buff();
+
+public:
+    buffLatexFilter(streambuf *sb, FILTER filtermode = Highlight, int bsize = 0);
     ~buffLatexFilter();
 
 };
@@ -39,8 +38,8 @@ public:
 class ostreamLatexFilter: public ostream
 {
 public:
-    ostreamLatexFilter::ostreamLatexFilter(streambuf *sb, FILTER filter = Highlight):
-      ostream(new buffLatexFilter(sb, filter))
+    ostreamLatexFilter::ostreamLatexFilter(streambuf *sb, FILTER filter = Highlight, int bsize = 0):
+      ostream(new buffLatexFilter(sb, filter, bsize))
     {
     }
 

@@ -29,7 +29,7 @@ public:
     string Relative(string sCurrDir)
     {
         char temp[_MAX_PATH];
-        Abs2Rel(m_szFullpath,temp,sCurrDir.c_str());
+        Abs2Rel(m_szFullpath,temp,_MAX_PATH, sCurrDir.c_str());
         return string(temp);
     }
 
@@ -43,7 +43,7 @@ public:
     // create a filename from a relative path
     CFilename(string sCurrDir, string sRelPath)
     {
-        Rel2Abs(sRelPath.c_str(),m_szFullpath,sCurrDir.c_str());
+        Rel2Abs(sRelPath.c_str(),m_szFullpath, _MAX_PATH, sCurrDir.c_str());
         m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
     }
     friend bool operator== (const CFilename& _Left, const CFilename& _Right);

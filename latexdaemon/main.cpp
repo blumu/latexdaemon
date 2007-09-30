@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"17"
+#define BUILD			"18"
 
 // See changelog.html for the list of changes:.
 
@@ -1453,6 +1453,7 @@ int start_gsview32(string filename)
         EnterCriticalSection( &cs );
         cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
         LeaveCriticalSection( &cs ); 
+        free(szCmdline);
         return -1;
     }
     else
@@ -1460,9 +1461,8 @@ int start_gsview32(string filename)
         hwndGsview32 = NULL;
         EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
     }
+    
     free(szCmdline);
-
-
     return 0;
 }
 
@@ -1472,12 +1472,18 @@ int shellfile_open(string filename)
     EnterCriticalSection( &cs );
     cout << fgMsg << "-- view " << filename << " ...\n";
     LeaveCriticalSection( &cs ); 
-    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-        _T((texdir+filename).c_str()),
-        NULL,
-        texdir.c_str(),
-        SW_SHOWNORMAL);
-    return ret>32 ? 0 : ret;
+    string file = texdir+filename;
+    SHELLEXECUTEINFO shei = {0};
+    shei.cbSize = sizeof(SHELLEXECUTEINFO);
+    shei.fMask = 0;
+    shei.hwnd = NULL;
+    shei.lpVerb = _T("open");
+    shei.lpFile = file.c_str();
+    shei.lpParameters = NULL;
+    shei.lpDirectory = texdir.c_str();
+    shei.nShow = SW_SHOWNORMAL;
+    shei.hInstApp = NULL;
+    return ShellExecuteEx(&shei) ? 0 : GetLastError();
 }
 
 // View the .ps file
@@ -1509,12 +1515,19 @@ int view_dvi()
     EnterCriticalSection( &cs );
     cout << fgMsg << "-- view " << file << " ...\n";
     LeaveCriticalSection( &cs ); 
-    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-        _T((texdir+file).c_str()),
-        NULL,
-        texdir.c_str(),
-        SW_SHOWNORMAL);
-    return ret>32 ? 0 : ret;
+
+    string filepath = texdir+file;
+    SHELLEXECUTEINFO shei = {0};
+    shei.cbSize = sizeof(SHELLEXECUTEINFO);
+    shei.fMask = 0;
+    shei.hwnd = NULL;
+    shei.lpVerb = _T("open");
+    shei.lpFile = filepath.c_str();
+    shei.lpParameters = NULL;
+    shei.lpDirectory = texdir.c_str();
+    shei.nShow = SW_SHOWNORMAL;
+    shei.hInstApp = NULL;
+    return ShellExecuteEx(&shei) ? 0 : GetLastError();
 }
 
 // View the .pdf file
@@ -1539,12 +1552,18 @@ int edit()
     EnterCriticalSection( &cs );
     cout << fgMsg << "-- editing " << texbasename << ".tex...\n";
     LeaveCriticalSection( &cs ); 
-    int ret = (int)(HINSTANCE)ShellExecute(NULL, _T("open"),
-        _T(texfullpath.c_str()),
-        NULL,
-        texdir.c_str(),
-        SW_SHOWNORMAL);
-    return ret>32 ? 0 : ret;
+
+    SHELLEXECUTEINFO shei = {0};
+    shei.cbSize = sizeof(SHELLEXECUTEINFO);
+    shei.fMask = 0;
+    shei.hwnd = NULL;
+    shei.lpVerb = _T("open");
+    shei.lpFile = texfullpath.c_str();
+    shei.lpParameters = NULL;
+    shei.lpDirectory = texdir.c_str();
+    shei.nShow = SW_SHOWNORMAL;
+    shei.hInstApp = NULL;
+    return ShellExecuteEx(&shei) ? 0 : GetLastError();
 }
 
 // Open the folder containing the .tex file
@@ -1556,12 +1575,18 @@ int openfolder()
     EnterCriticalSection( &cs );
     cout << fgMsg << "-- open directory " << texdir << " ...\n";
     LeaveCriticalSection( &cs ); 
-    int ret = (int)(HINSTANCE)ShellExecute(NULL, NULL,
-        _T(texdir.c_str()),
-        NULL,
-        NULL,
-        SW_SHOWNORMAL);
-    return ret>32 ? 0 : ret;
+
+    SHELLEXECUTEINFO shei = {0};
+    shei.cbSize = sizeof(SHELLEXECUTEINFO);
+    shei.fMask = 0;
+    shei.hwnd = NULL;
+    shei.lpVerb = NULL;
+    shei.lpFile = texdir.c_str();
+    shei.lpParameters = NULL;
+    shei.lpDirectory = NULL;
+    shei.nShow = SW_SHOWNORMAL;
+    shei.hInstApp = NULL;
+    return ShellExecuteEx(&shei) ? 0 : GetLastError();
 }
 
 

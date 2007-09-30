@@ -17,3 +17,4 @@
 #define _fgNormal		JadedHoboConsole::fgLoWhite
 #define _fgDepFile		JadedHoboConsole::fgHiCyan
 #define _fgPrompt		JadedHoboConsole::fgLoCyan
+#define _fgLineNumber	_fgNormal
