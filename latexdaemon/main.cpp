@@ -3,22 +3,9 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	"25 September 2007"
 #define VERSION			0.9
-#define BUILD			"16"
+#define BUILD			"17"
 
 // See changelog.html for the list of changes:.
-
-////////////////////
-// TODO LIST
-//
-//  - At the moment, messages reporting that some watched file has been modified are not shown while the "make" 
-//  thread is running. This is done in order to avoid printf interleaving. A solution would 
-//  be to delay the printing of these messages until the end of the execution of the make "thread".
-//  Another solution is to implement a separate thread responsible of the output of all other threads.
-//
-// - Implement the InternalPreamble feature. In this mode, the preamble is automatically extracted from the main
-//   .tex file and there is no need to create a separate preamble file
-//
-////////////////
 
 ////////////////////
 // Acknowledgment:
@@ -290,7 +277,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 	{ OPT_EDIT,			_T("-edit"),		SO_NONE		},
 	{ OPT_VIEWOUTPUT,	_T("-v"),			SO_NONE		},
 	{ OPT_VIEWOUTPUT,	_T("-view"),		SO_NONE		},
-	{ OPT_VIEWDVI,		_T("-vd"),			SO_NONE		},
+	{ OPT_VIEWDVI,		_T("-vi"),			SO_NONE		},
 	{ OPT_VIEWDVI,		_T("-viewdvi"),		SO_NONE		},
 	{ OPT_VIEWPS,		_T("-vs"),			SO_NONE		},
 	{ OPT_VIEWPS,		_T("-viewps"),		SO_NONE		},
@@ -340,10 +327,10 @@ void ShowUsage(TCHAR *progname) {
          << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
          << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
          << "INSTRUCTIONS:" << endl
-         << "Suppose main.tex is the main file of your Latex document then:" << endl
-         << "  1. move the preamble from main.tex to a new file named mainfile.pre" << endl 
-         << "  2. insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
-         << "  3. start the daemon with the command \"latexdaemon main.tex *.tex\" " << 
+         << "Suppose main.tex is the main file of your Latex document." << endl
+         << "  1. Move the preamble from main.tex to a new file named mainfile.pre" << endl 
+         << "  2. Insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
+         << "  3. Start the daemon with the command \"latexdaemon main.tex\" " << 
             "(if you use pdflatex then add the option \"-ini=pdflatex\")" << endl << endl;
 }
 
@@ -443,7 +430,7 @@ void ExecuteOptionIni( string optionarg )
 {
     texinifile = optionarg;
     SetTitle("monitoring");
-    cout << "-Initialization file set to \"" << texinifile << "\"" << endl;;
+    cout << fgNormal << "-Initialization file set to \"" << texinifile << "\"" << endl;;
     if( texinifile == "pdflatex" || texinifile == "pdftex" )
         output_ext = ".pdf";
     else if ( texinifile == "latex" || texinifile == "tex" )
@@ -455,9 +442,9 @@ void ExecuteOptionPreamble( string optionarg )
     EnterCriticalSection( &cs );
     LookForExternalPreamble = (optionarg=="none") ? false : true ;
     if( LookForExternalPreamble )
-        cout << "-I will look for an external preamble file next time I load a .tex file." << endl;
+        cout << fgNormal << "-I will look for an external preamble file next time I load a .tex file." << endl;
     else
-        cout << "-I will not look for an external preamble next time I load a .tex file." << endl;
+        cout << fgNormal << "-I will not look for an external preamble next time I load a .tex file." << endl;
     LeaveCriticalSection( &cs );
 }
 
@@ -467,11 +454,11 @@ void ExecuteOptionForce( string optionarg, JOB &force )
     EnterCriticalSection( &cs );
     if( optionarg=="fullcompile" ) {
         force = FullCompile;
-        cout << "-Initial full compilation forced." << endl;
+        cout << fgNormal << "-Initial full compilation forced." << endl;
     }
     else {
         force = Compile;
-        cout << "-Initial compilation forced." << endl;
+        cout << fgNormal << "-Initial compilation forced." << endl;
     }
     LeaveCriticalSection( &cs );
 }
@@ -481,7 +468,7 @@ void ExecuteOptionGsview()
 {
 	UseGswin32 = true;
 	EnterCriticalSection( &cs );
-	cout << "-Viewer set to GhostView." << endl;
+	cout << fgNormal << "-Viewer set to GhostView." << endl;
 	LeaveCriticalSection( &cs );
 }
 
@@ -491,11 +478,11 @@ void ExecuteOptionAfterJob( string optionarg )
 	EnterCriticalSection( &cs );
 	if( optionarg=="dvips" ) {
 		afterjob = Dvips;
-		cout << "-After-compilation job set to '" << optionarg << "'" << endl;
+		cout << fgNormal << "-After-compilation job set to '" << optionarg << "'" << endl;
 	}
 	else {
 		afterjob = Rest;
-		cout << "-After-compilation job set to 'rest'" << endl;
+		cout << fgNormal << "-After-compilation job set to 'rest'" << endl;
 	}
 	LeaveCriticalSection(&cs);
 }
@@ -506,14 +493,14 @@ void ExecuteOptionWatch( string optionarg )
 	Watch = optionarg != "no";
 	if( Watch ) {
 		EnterCriticalSection( &cs );
-		cout << "-File modification monitoring activated" << endl;
+		cout << fgNormal << "-File modification monitoring activated" << endl;
 		LeaveCriticalSection( &cs );
 		if( pglob && !hWatchingThread)
 			RestartWatchingThread();
 	}
 	else {
 		EnterCriticalSection( &cs );
-		cout << "-File modification monitoring disabled" << endl;
+		cout << fgNormal << "-File modification monitoring disabled" << endl;
 		LeaveCriticalSection( &cs );
 		if( hWatchingThread ) {
 			// Stop the watching thread
@@ -549,7 +536,7 @@ void ExecuteOptionOutputFilter( string optionarg )
     }
 
     EnterCriticalSection( &cs );
-    cout << "-Latex output: " << filtermessage << endl;
+    cout << fgNormal << "-Latex output: " << filtermessage << endl;
     LeaveCriticalSection( &cs );
 }
 
@@ -559,9 +546,9 @@ void ExecuteOptionAutoDependencies( string optionarg )
     Autodep = optionarg != "no";
     EnterCriticalSection( &cs );
     if( Autodep )
-        cout << "-Automatic dependency detection activated" << endl;
+        cout << fgNormal << "-Automatic dependency detection activated" << endl;
     else
-        cout << "-Automatic dependency detection disabled" << endl;
+        cout << fgNormal << "-Automatic dependency detection disabled" << endl;
     LeaveCriticalSection( &cs );
 }
 
@@ -740,12 +727,13 @@ void WINAPI CommandPromptThread( void *param )
         switch( args.OptionId() ) {
         case OPT_USAGE:
             EnterCriticalSection( &cs );
+                cout << fgNormal;
                 ShowUsage(NULL);
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_HELP:
             EnterCriticalSection( &cs );
-            cout << fgPrompt << "The following commands are available:" << endl
+            cout << fgNormal << "The following commands are available:" << endl
                  << "  b[ibtex]        to run bibtex on the .tex file" << endl
                  << "  c[compile]      to compile the .tex file using the precompiled preamble" << endl
                  << "  d[vips]         to convert the .dvi file to postscript" << endl
@@ -757,9 +745,10 @@ void WINAPI CommandPromptThread( void *param )
                  << "  p[s2pdf]        to convert the .ps file to pdf" << endl
                  << "  q[uit]          to quit the program" << endl 
                  << "  u[sage]         to show the help on command line parameters usage" << endl
-                 << "  v[iew]          to view the output file (dvi or pdf depending on ini value)" << endl				 << "  vd|viewdvi      to view the pdf file output" << endl 
-                 << "  vs|viewps      to view the pdf file output" << endl 
-                 << "  vf|viewpdf      to view the pdf file output" << endl << endl
+                 << "  v[iew]          to view the output file (dvi or pdf depending on ini value)" << endl
+                 << "  vi|viewdvi      to view the .dvi output file" << endl 
+                 << "  vs|viewps       to view the .ps output file" << endl 
+                 << "  vf|viewpdf      to view the .pdf output file" << endl << endl
                  << "You can also configure variables with:" << endl
                  << "  ini=inifile               set the initial format file to inifile" << endl
                  << "  preamble={none,external}  set the preamble mode for the file to be loaded" << endl
