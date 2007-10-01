@@ -67,6 +67,7 @@ public:
     }
 
     friend bool operator== (const CFilename& _Left, const CFilename& _Right);
+    friend bool operator!= (const CFilename& _Left, const CFilename& _Right);
 
 private:
     TCHAR   m_szFullpath[_MAX_PATH];
@@ -75,4 +76,8 @@ private:
 
 bool operator== (const CFilename& _Left, const CFilename& _Right) {
     return 0 ==_tcsicmp(_Left.m_szFullpath, _Right.m_szFullpath );
+}
+
+bool operator!= (const CFilename& _Left, const CFilename& _Right) {
+    return 0 !=_tcsicmp(_Left.m_szFullpath, _Right.m_szFullpath );
 }

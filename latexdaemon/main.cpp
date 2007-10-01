@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"30 September 2007"
+#define VERSION_DATE	"1 October 2007"
 #define VERSION			0.9
-#define BUILD			"19"
+#define BUILD			"20"
 
 // See changelog.html for the list of changes:.
 
@@ -1874,63 +1874,61 @@ void WINAPI WatchingThread( void *param )
             while( pFileNotify ) { 
 
                 // Convert the filename from unicode string to oem string
-                char filename[_MAX_FNAME];
+                char tmp[_MAX_FNAME];
                 pFileNotify->FileName[min(pFileNotify->FileNameLength/2, _MAX_FNAME-1)] = 0;
-                wcstombs( filename, pFileNotify->FileName, _MAX_FNAME );
-                CFilename modifiedfile(watchdirs[iTriggeredDir]->szPath, filename);
+                wcstombs( tmp, pFileNotify->FileName, _MAX_FNAME );
+                CFilename modifiedfile(watchdirs[iTriggeredDir]->szPath, tmp);
 
                 if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
-                    print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" touched\n" );
+					print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" touched\n" );
                 }
                 else {
                     md5 dg_new;
+
                     // is it the bibtex file?
-                    if( !_tcsicmp(filename,bblfilename.c_str()) ) {
+                    if( modifiedfile == CFilename(texdir, bblfilename) ) {
                         // has the digest changed?
-                        if( dg_new.DigestFile(filename) && (dg_bbl != dg_new) ) {
+                        if( dg_new.DigestFile(modifiedfile) && (dg_bbl != dg_new) ) {
                             dg_bbl = dg_new;
-                            print_if_possible(fgDepFile, string("+ ") + filename + "(bibtex) changed\n" );
+                            print_if_possible(fgDepFile, string("+ ") + modifiedfile.Relative(texdir) + "(bibtex) changed\n" );
                             makejob = max(Compile, makejob);
                         }
-                        else {
-                            print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
-                        }
+                        else
+                            print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" modified but digest preserved\n" );
                     }
                     else {
                         // is it a dependency of the main .tex file?
                         vector<CFilename>::iterator it = find(deps.begin(),deps.end(), modifiedfile);
                         if(it != deps.end() ) {
                             size_t i = it - deps.begin();
-                            if ( dg_new.DigestFile(filename) && (dg_deps[i]!=dg_new) ) {
+                            if ( dg_new.DigestFile(modifiedfile) && (dg_deps[i]!=dg_new) ) {
 	                            dg_deps[i] = dg_new;
-	                            print_if_possible(fgDepFile, string("+ \"") + it->Relative(sCurrDir) + "\" changed (dependency file).\n" );
+	                            print_if_possible(fgDepFile, string("+ \"") + modifiedfile.Relative(texdir) + "\" changed (dependency file).\n" );
 	                            makejob = max(Compile, makejob);
                             }
-                            else {
-	                            print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
-                            }
+                            else
+	                            print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" modified but digest preserved\n" );
                         }
                         else if ( ExternalPreamblePresent ) {
                             // is it a dependency of the preamble?
                             vector<CFilename>::iterator it = find(preamb_deps.begin(),preamb_deps.end(), modifiedfile);
                             if(it != preamb_deps.end() ) {
                                 size_t i = it - preamb_deps.begin();
-                                if ( dg_new.DigestFile(filename) && (dg_preamb_deps[i]!=dg_new) ) {
+                                if ( dg_new.DigestFile(modifiedfile) && (dg_preamb_deps[i]!=dg_new) ) {
                                     dg_preamb_deps[i] = dg_new;
-                                    print_if_possible(fgDepFile, string("+ \"") + it->Relative(sCurrDir) + "\" changed (preamble dependency file).\n" );
+                                    print_if_possible(fgDepFile, string("+ \"") + modifiedfile.Relative(texdir) + "\" changed (preamble dependency file).\n" );
                                     makejob = max(FullCompile, makejob);
                                 }
-                                else {
-                                    print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified but digest preserved\n" );
-                                }
+                                else
+                                    print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" modified but digest preserved\n" );
                             }
                             // not a relevant file ...
                             else
-                                print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified\n" );
+                                print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" modified\n" );
                         }
                         // not a relevant file ...
                         else
-                            print_if_possible(fgIgnoredfile, string(".\"") + filename + "\" modified\n" );
+                            print_if_possible(fgIgnoredfile, string(".\"") + modifiedfile.Relative(texdir) + "\" modified\n" );
                     }
                 }
 
