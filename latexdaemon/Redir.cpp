@@ -311,7 +311,7 @@ int CRedirector::RedirectStdout()
             break;
 
         szOutput[dwRead] = 0;
-        *m_predirout << szOutput;
+        m_predirout->rdbuf()->sputn(szOutput,dwRead);
     }
 
     DWORD dwError = ::GetLastError();

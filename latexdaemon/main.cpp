@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"1 October 2007"
+#define VERSION_DATE	"2 October 2007"
 #define VERSION			0.9
-#define BUILD			"20"
+#define BUILD			"21"
 
 // See changelog.html for the list of changes:.
 
