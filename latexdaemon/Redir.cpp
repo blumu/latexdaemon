@@ -374,6 +374,6 @@ DWORD WINAPI CRedirector::OutputThread(LPVOID lpvThreadParam)
 	}
 
 	// close handles
-	pRedir->Close();
+	//pRedir->Close(); // Commented out by WB (it causes problems)
 	return nRet;
 }
