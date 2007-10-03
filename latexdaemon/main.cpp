@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"2 October 2007"
+#define VERSION_DATE	"3 October 2007"
 #define VERSION			0.9
-#define BUILD			"22"
+#define BUILD			"23"
 
 // See changelog.html for the list of changes:.
 
@@ -113,9 +113,6 @@ bool LookForExternalPreamble = true;
 
 // is there an external preamble file for the currently openend .tex file?
 bool ExternalPreamblePresent = true;
-
-// Set to true when an external command is running (function launch_and_wait())
-bool ExecutingExternalCommand = false;
 
 // watch for file changes ?
 bool Watch = true;
@@ -350,11 +347,8 @@ void SetTitle(string state)
 // Print a string in a given color only if the output is not already occupied, otherwise do nothing
 void print_if_possible( std::ostream& color( std::ostream&  stream ) , string str)
 {
-    if( TryEnterCriticalSection(&cs) ){
-        // do not print things if an external program is running
-        if(!ExecutingExternalCommand ) { 
-            cout << color << str << fgPrompt;
-        }
+    if( TryEnterCriticalSection(&cs) ) {
+        cout << color << str << fgPrompt;
         LeaveCriticalSection(&cs);
     }
 }
@@ -1202,42 +1196,36 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 // hEvtAbortMake event)
 DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
 {
+    DWORD dwRet = 0;
     LPTSTR szCmdline= _tcsdup(cmdline);
 
-    DWORD dwRet = 0;
-    HANDLE hProc = NULL;
-
-    EnterCriticalSection( &cs );
-    ExecutingExternalCommand = true;
-
     ostreamLatexFilter filtstream(cout.rdbuf(), filt);
-    CRedirector redir((filt != Raw) ? &filtstream : NULL);
-    if( !redir.Open(szCmdline) )
-    {
+    CRedirector redir((filt != Raw) ? &filtstream : NULL, &cs);
+    if( redir.Open(szCmdline) ) {
+        HANDLE hProc = redir.GetProcessHandle();
+
+        // Wait until child process exits or the make process is aborted.
+        HANDLE hp[2] = {hProc, hEvtAbortMake};
+        switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
+        case WAIT_OBJECT_0:
+            // Get the return code
+            GetExitCodeProcess( hProc, &dwRet);
+            break;
+        case WAIT_OBJECT_0+1:
+            dwRet = -1;
+            TerminateProcess( hProc,1);
+            break;
+        default:
+            break;
+        }
+    }
+    else {
         dwRet = GetLastError();
+        EnterCriticalSection( &cs );
         cout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
-        goto clean;
-    }
-    hProc = redir.GetProcessHandle();
-
-    // Wait until child process exits or the make process is aborted.
-    HANDLE hp[2] = {hProc, hEvtAbortMake};
-    switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
-    case WAIT_OBJECT_0:
-        // Get the return code
-        GetExitCodeProcess( hProc, &dwRet);
-        break;
-    case WAIT_OBJECT_0+1:
-        dwRet = -1;
-        TerminateProcess( hProc,1);
-        break;
-    default:
-        break;
+        LeaveCriticalSection( &cs ); 
     }
 
-clean:
-    ExecutingExternalCommand = false;
-    LeaveCriticalSection( &cs ); 
     free(szCmdline);
     return dwRet;
 }

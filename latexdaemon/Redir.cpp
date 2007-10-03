@@ -22,7 +22,7 @@ using namespace std;
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-CRedirector::CRedirector(std::ostream *predirout) :
+CRedirector::CRedirector(std::ostream *predirout, CRITICAL_SECTION *pcs) :
     m_hStdinWrite(NULL),
     m_hStdoutRead(NULL),
     m_hChildProcess(NULL),
@@ -30,7 +30,8 @@ CRedirector::CRedirector(std::ostream *predirout) :
     m_hEvtStop(NULL),
     m_dwThreadId(0),
     m_dwWaitTime(100),
-    m_predirout(predirout)
+    m_predirout(predirout),
+    m_pcs(pcs)
 {
 
 }
@@ -349,6 +350,7 @@ DWORD WINAPI CRedirector::OutputThread(LPVOID lpvThreadParam)
 	aHandles[0] = pRedir->m_hChildProcess;
 	aHandles[1] = pRedir->m_hEvtStop;
 
+    EnterCriticalSection(pRedir->m_pcs);
 	for (;;)
 	{
 		// redirect stdout till there's no more data.
@@ -372,6 +374,7 @@ DWORD WINAPI CRedirector::OutputThread(LPVOID lpvThreadParam)
 			break;
 		}
 	}
+    LeaveCriticalSection(pRedir->m_pcs);
 
 	// close handles
 	//pRedir->Close(); // Commented out by WB (it causes problems)

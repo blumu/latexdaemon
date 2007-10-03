@@ -17,7 +17,11 @@
 class CRedirector 
 {
 public:
-	CRedirector(std::ostream *redirout);
+    // modif by wb:
+    //  - redirout is a pointer to a stream responsible of printing the output
+    // - pcs is a pointer to a critical section that controls the console output. It will be entered
+    // before printing and left when the output thread finishes.
+    CRedirector(std::ostream *redirout, CRITICAL_SECTION *pcs);
 	virtual ~CRedirector();
 
 private:
@@ -25,7 +29,7 @@ private:
 	HANDLE m_hEvtStop;		// event to notify the redir thread to exit
 	DWORD m_dwThreadId;		// id of the redir thread
 	DWORD m_dwWaitTime;		// wait time to check the status of the child process
-
+    CRITICAL_SECTION *m_pcs;
 
 
 protected:
