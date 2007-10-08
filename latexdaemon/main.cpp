@@ -1,9 +1,9 @@
 // Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		"LatexDaemon"
-#define VERSION_DATE	"3 October 2007"
+#define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"23"
+#define BUILD			"24"
 
 // See changelog.html for the list of changes:.
 
@@ -1200,7 +1200,9 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
     LPTSTR szCmdline= _tcsdup(cmdline);
 
     ostreamLatexFilter filtstream(cout.rdbuf(), filt);
-    CRedirector redir((filt != Raw) ? &filtstream : NULL, &cs);
+    ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
+    CRedirector redir(pRedirStream , &cs);
+    if( !pRedirStream ) EnterCriticalSection(&cs);
     if( redir.Open(szCmdline) ) {
         HANDLE hProc = redir.GetProcessHandle();
 
@@ -1218,6 +1220,8 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
         default:
             break;
         }
+
+        if(!pRedirStream) LeaveCriticalSection( &cs ); 
     }
     else {
         dwRet = GetLastError();

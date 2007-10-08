@@ -47,12 +47,13 @@ void buffLatexFilter::put_buff()
 /// send the last line read to the external streambuffer
 void buffLatexFilter::put_newline_buff()
 {
-    if( m_lookforlinenumber && strncmp(m_curline.c_str(), "l.", 2) == 0  ) {
+    if( m_lookforlinenumber ){
         JadedHoboConsole::console.SetColor( _fgLineNumber, JadedHoboConsole::bgMask );
         m_sbuf->sputn("  ",2);
         m_sbuf->sputn(m_curline.c_str(), (streamsize)m_curline.size());
-
-        m_lookforlinenumber = false;
+        
+        if( strncmp(m_curline.c_str(), "l.", 2) == 0  ) 
+            m_lookforlinenumber = false;
     }
     else if( strncmp(m_curline.c_str(), "Overfull", 8) == 0 
             || strncmp(m_curline.c_str(), "Underfull",9) == 0 
