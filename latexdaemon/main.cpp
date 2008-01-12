@@ -183,7 +183,7 @@ vector<CFilename> static_deps;
 // dependencies automatically detected
 vector<CFilename> auto_deps, auto_preamb_deps;
 
-// output filtering mode
+// output filter mode
 FILTER Filter = Highlight;
 
 
@@ -318,7 +318,7 @@ void ShowUsage(TCHAR *progname) {
          << "   . 'dvips' specifies that dvips should be run after a successful compilation of the .tex file," <<endl
          << "   . 'rest' (default) specifies that nothing needs to be done after compilation."<<endl
          << " --filter={highlight|raw|err|warn|err+warn}" << endl 
-         << "   . Set the latex output filtering mode. Default: highlight" <<endl <<endl
+         << "   . Set the latex output filter mode. Default: highlight" <<endl <<endl
          << " --preamble={none|external}" << endl 
          << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
          << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically deactivated."<<endl
@@ -751,7 +751,7 @@ void WINAPI CommandPromptThread( void *param )
                  << "  autodep={yes,no}          activate/deactivate automatic dependency detection" << endl
                  << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
                  << "  watch={yes,no}            activate/deactivate file modification watching" << endl 
-                 << "  filtering={highlight|raw|err|warn|err+warn}  set the filtering mode for latex ouput. Default: highlight" << endl << endl;
+                 << "  filter={highlight|raw|err|warn|err+warn}  set the filter mode for latex ouput. Default: highlight" << endl << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
