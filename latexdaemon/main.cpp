@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"24"
+#define BUILD			"25"
 
 // See changelog.html for the list of changes:.
 
@@ -18,7 +18,7 @@
 //
 ///////////////////
 
-#define _WIN32_WINNT  0x0400
+//#define _WIN32_WINNT  0x0400
 #define _CRT_SECURE_NO_DEPRECATE
 #include <windows.h>
 #include <Winbase.h>
@@ -421,6 +421,21 @@ void RefreshDependencies(bool bPreamble) {
     }
 }
 
+//
+bool IsRunning_WatchingThread()
+{
+    return hWatchingThread && ( WaitForSingleObject(hWatchingThread, 0) == WAIT_TIMEOUT );
+}
+
+void StopAndWaitUntilEnd_WatchingThread()
+{
+    SetEvent(hEvtStopWatching);
+    WaitForSingleObject(hWatchingThread, INFINITE);
+    CloseHandle(hWatchingThread);
+    hWatchingThread = NULL;
+}
+
+
 // Code executed when the -ini option is specified
 void ExecuteOptionIni( string optionarg )
 {
@@ -491,18 +506,15 @@ void ExecuteOptionWatch( string optionarg )
 		EnterCriticalSection( &cs );
 		cout << fgNormal << "-File modification monitoring activated" << endl;
 		LeaveCriticalSection( &cs );
-		if( FileLoaded && !hWatchingThread )
+		if( FileLoaded )
 			RestartWatchingThread();
 	}
 	else {
 		EnterCriticalSection( &cs );
 		cout << fgNormal << "-File modification monitoring disabled" << endl;
 		LeaveCriticalSection( &cs );
-		if( hWatchingThread ) {
-			// Stop the watching thread
-			SetEvent(hEvtStopWatching);
-			WaitForSingleObject(hWatchingThread, INFINITE);
-		}
+		// Stop the watching thread
+        StopAndWaitUntilEnd_WatchingThread();
 	}
 }
 
@@ -583,6 +595,8 @@ DWORD make(JOB makejob)
 	return ret;
 }
 
+
+
 // thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
 {
@@ -604,24 +618,23 @@ void WINAPI MakeThread( void *param )
         // Restore the backup of the .aux file
         CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+".aux").c_str(), FALSE);
     
-    // restore the prompt
-    print_if_possible(fgPrompt, (hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING));
+    // restore the prompt    
+    print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING );
 
     if( errcode == 0 && Autodep ) 
         // Refresh the list of dependencies
         RefreshDependencies(p->makejob == FullCompile);
 
-    hMakeThread = NULL;
     free(p);
 }
 
-// 
+
+
+
 void RestartWatchingThread(){
-    // stop it first if already started
-    if( hWatchingThread ) {
-        SetEvent(hEvtStopWatching);
-        WaitForSingleObject(hWatchingThread, INFINITE);
-    }
+    // if the thread already exists then stop it
+    if( IsRunning_WatchingThread() )
+        StopAndWaitUntilEnd_WatchingThread();
 
     SetTitle("monitoring");
 
@@ -664,13 +677,12 @@ void WINAPI CommandPromptThread( void *param )
     bool wantsmore = true, printprompt=true;
     while(wantsmore)
     {
-        if(hMakeThread) {
-            // wait for the "make" thread to end
+        // wait for the "make" thread to end if it is running
+        if(hMakeThread)
             WaitForSingleObject(hMakeThread, INFINITE);
-        }
 
         if( printprompt )
-            print_if_possible(fgPrompt, hWatchingThread ? PROMPT_STRING_WATCH : PROMPT_STRING);
+            print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING);
         printprompt = true;
 
         // Read a command from the user
@@ -868,16 +880,21 @@ err_load:
     HANDLE hp[2];
     int i=0;
     if( hWatchingThread ) {
-        // Stop the watching thread
+        // send a message to the stop the watching thread
         SetEvent(hEvtStopWatching);
         hp[i++] = hWatchingThread;
     }
     if( hMakeThread ) {
-        // Stop the make thread
+        // send a message to stop the make thread
         SetEvent(hEvtAbortMake);
         hp[i++] = hMakeThread;
     }
+    // wait for the two threads to end
     WaitForMultipleObjects(i, hp, TRUE, INFINITE);
+    CloseHandle(hMakeThread);
+    hMakeThread = NULL;
+    CloseHandle(hWatchingThread);
+    hWatchingThread = NULL;
 
 }
 
@@ -1433,7 +1450,8 @@ int start_gsview32(string filename)
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
     ZeroMemory( &piGsview32, sizeof(piGsview32) );
-	
+
+
     // Start the child process. 
     if( !CreateProcess( NULL,   // No module name (use command line)
         szCmdline,      // Command line
@@ -1451,16 +1469,19 @@ int start_gsview32(string filename)
         cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
         LeaveCriticalSection( &cs ); 
         free(szCmdline);
+        piGsview32.hProcess = piGsview32.hThread = NULL;
+        piGsview32.dwThreadId = 0;
         return -1;
     }
     else
     {
+        CloseHandle(piGsview32.hProcess);
+        CloseHandle(piGsview32.hThread);
         hwndGsview32 = NULL;
         EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
+        free(szCmdline);
+        return 0;
     }
-    
-    free(szCmdline);
-    return 0;
 }
 
 // open a file (located in the same directory as the .tex file) with the program associated with its extension in windows
@@ -1631,7 +1652,7 @@ int bibtex()
 
 
 // Restart the make thread if necessary.
-// returns true if a thread has been launched.
+// returns true if a thread has been launched successfuly.
 bool RestartMakeThread( JOB makejob ) {
     if( makejob == Rest || !CheckFileLoaded() )
         return false;
@@ -1641,6 +1662,8 @@ bool RestartMakeThread( JOB makejob ) {
         SetEvent(hEvtAbortMake);
         // wait for the "make" thread to end
         WaitForSingleObject(hMakeThread, INFINITE);
+        CloseHandle(hMakeThread);
+        hMakeThread = NULL;
     }
 
     // Create a new "make" thread.
@@ -1706,8 +1729,7 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
 // Thread responsible of watching the directory and launching compilation when a change is detected
 void WINAPI WatchingThread( void *param )
 {
-    if( static_deps.size() == 0 ) {
-        hWatchingThread = NULL;
+    if( static_deps.size() == 0 ) { // if no file to watch then leave
         return;
     }
 
@@ -1768,7 +1790,6 @@ void WINAPI WatchingThread( void *param )
                 {
                     if( n == 0  ) {
                         print_if_possible(fgErr, "The preamble file " + preamble_filename + " cannot be found or opened!\n" );
-                        hWatchingThread = NULL;
                         delete dg_deps;
                         delete dg_preamb_deps;
                         return;
@@ -1945,7 +1966,6 @@ void WINAPI WatchingThread( void *param )
 
         delete dg_deps;
         delete dg_preamb_deps;
-        hWatchingThread = NULL;
     }
 }
 

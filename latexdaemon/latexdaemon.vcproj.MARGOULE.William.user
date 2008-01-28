@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioUserFile
 	ProjectType="Visual C++"
-	Version="8.00"
-	ShowAllFiles="true"
+	Version="9.00"
+	ShowAllFiles="false"
 	>
 	<Configurations>
 		<Configuration
