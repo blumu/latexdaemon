@@ -392,7 +392,7 @@ int CompareDeps(const vector<CFilename> &pv1, const vector<CFilename> &pv2)
 
     bool bfound = true;
     for(vector<CFilename>::const_iterator it1 = pv1.begin(); bfound && it1!=pv1.end(); it1++) {
-        bfound = find( pv2.begin( ), pv2.end( ), *it1 ) != pv2.end();
+        bfound = find( pv2.begin(), pv2.end(), *it1 ) != pv2.end();
     }
     return bfound ? 0 : 1;
 }
@@ -600,9 +600,6 @@ DWORD make(JOB makejob)
 // thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
 {
-    // prepare the abort event so that other thread can stop this one
-    ResetEvent(hEvtAbortMake);
-
     //////////////
     // perform the necessary compilations
     MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
@@ -639,6 +636,11 @@ void RestartWatchingThread(){
     SetTitle("monitoring");
 
     DWORD watchingthreadID;
+
+    // reset the hEvtStopWatching event so that it can be set if
+    // some thread requires the watching thread to stop
+    ResetEvent(hEvtStopWatching);
+
     hWatchingThread = CreateThread( NULL, 0,
         (LPTHREAD_START_ROUTINE) WatchingThread,
         0,
@@ -1209,8 +1211,8 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 
 
 
-// Launch an external program and wait for its termination or for an abortion (set with the 
-// hEvtAbortMake event)
+// Launch an external program and wait for its termination or for an abortion
+// (this happens when the event hEvtAbortMake is signaled)
 DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
 {
     DWORD dwRet = 0;
@@ -1666,6 +1668,9 @@ bool RestartMakeThread( JOB makejob ) {
         hMakeThread = NULL;
     }
 
+    // prepare the abort event to let other threads stop the make thread
+    ResetEvent(hEvtAbortMake);
+
     // Create a new "make" thread.
     //  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
     //  otherwise, if we pass the address of a locally defined variable as a parameter to 
@@ -1737,10 +1742,6 @@ void WINAPI WatchingThread( void *param )
     cout << fgMsg << "\n-- Watching files for change...\n" << fgNormal;
     LeaveCriticalSection( &cs ); 
  
-    // reset the hEvtStopWatching event so that it can be set if
-    // some thread requires to stop this thread
-    ResetEvent(hEvtStopWatching);
-
     // Get current directory and keep as reference directory
     char sCurrDir[MAX_PATH];
     GetCurrentDir(sCurrDir);
