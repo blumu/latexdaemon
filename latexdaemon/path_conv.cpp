@@ -67,7 +67,7 @@ char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const
 
 	while(tmpStackAbsPath.size() > 0)
 	{
-		if(strcmp(tmpStackAbsPath.top(),tmpStackCurrPath.top())== 0  )
+		if(_stricmp(tmpStackAbsPath.top(),tmpStackCurrPath.top())== 0  )
 			tmpMatchQueue.push(tmpStackAbsPath.top());
 		else
 		{

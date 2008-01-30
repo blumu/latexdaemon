@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"25"
+#define BUILD			"26"
 
 // See changelog.html for the list of changes:.
 
@@ -18,7 +18,7 @@
 //
 ///////////////////
 
-//#define _WIN32_WINNT  0x0400
+#define _WIN32_WINNT  0x0500
 #define _CRT_SECURE_NO_DEPRECATE
 #include <windows.h>
 #include <Winbase.h>
