@@ -1,6 +1,10 @@
-<p class="date"> 27 January 2008 - Version 0.9 Build 25 </p>
+<p class="date"> 30 January 2008 - Version 0.9 Build 26 </p>
 <ul>
 	<li>Bug fixed: Some handles were not closed properly.
+	</li>
+	<li>Bug fixed in the function that converts absolute path to relative path (comparisons are now case-insensitive).
+	This bug caused an infinite loop when the function was called with
+	different capitalization in the directory name and filename, which in turn caused the watching thread to block.
 	</li>
 </ul>
 

@@ -1,6 +1,6 @@
 @echo off
 set MSVC=C:\Program Files\Microsoft Visual Studio 9.0
-rm -R temp\
+rm -Rf temp\
 rem if not exist temp mkdir temp
 mkdir temp\bin
 copy "%MSVC%\VC\redist\x86\Microsoft.VC90.CRT\*" temp\bin\
