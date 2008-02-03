@@ -14,16 +14,20 @@ public:
         m_pszBasenamePart = m_szFullpath;
     }
 
+    inline void init(LPCTSTR fullpath)
+    {
+        _tcscpy_s(m_szFullpath, _MAX_PATH, fullpath);
+        m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
+    }
+
     CFilename(string str)
     {
-        _tcscpy_s(m_szFullpath, _MAX_PATH, str.c_str());
-        m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
+        init(str.c_str());
     }
 
     CFilename(const CFilename& _assign)
     {
-        _tcscpy_s(m_szFullpath, _MAX_PATH, _assign.m_szFullpath);
-        m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
+        init(_assign.m_szFullpath);
     }
 
 
@@ -62,7 +66,8 @@ public:
 
     CFilename& operator= (const CFilename& _assign)
     {
-        CFilename::CFilename(_assign);
+        if (this != &_assign) // check that it is not assigning to itself?
+            init(_assign.m_szFullpath);
         return *this;
     }
 
