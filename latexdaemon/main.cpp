@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"27"
+#define BUILD			"28"
 
 // See changelog.html for the list of changes:.
 
@@ -654,18 +654,65 @@ BOOL CALLBACK FindConsoleEnumWndProc(HWND hwnd, LPARAM lparam)
 	 GetWindowThreadProcessId(hwnd, &dwProcessId);
 	 if (dwProcessId == GetCurrentProcessId()) {
 		 *((HWND *)lparam) = hwnd;
-		 return 0;
+		 return FALSE;
 	 } else {
-		 return 1;
+		 return TRUE;
 	 }
 }
 
-HWND FindCurrentProcessWindow(void)
+HWND MyGetConsoleHWND(void)
 {
-	HWND hwndConsole = 0;
-	EnumWindows(FindConsoleEnumWndProc, (LPARAM)&hwndConsole);
+	static HWND hwndConsole = NULL;
+    
+    if( hwndConsole == NULL )
+	    EnumWindows(FindConsoleEnumWndProc, (LPARAM)&hwndConsole);
+
 	return hwndConsole;
 }
+
+
+// Function taken from Microsoft KB124103:
+// http://support.microsoft.com/kb/124103
+HWND GetConsoleHWND(void)
+   {
+       #define MY_BUFSIZE 1024 // Buffer size for console window titles.
+       static HWND hwndFound = NULL;         // This is what is returned to the caller.
+       char pszNewWindowTitle[MY_BUFSIZE]; // Contains fabricated
+                                           // WindowTitle.
+       char pszOldWindowTitle[MY_BUFSIZE]; // Contains original
+                                           // WindowTitle.
+
+       if( hwndFound == NULL ) {
+
+           // Fetch current window title.
+
+           GetConsoleTitle(pszOldWindowTitle, MY_BUFSIZE);
+
+           // Format a "unique" NewWindowTitle.
+
+           wsprintf(pszNewWindowTitle,"%d/%d",
+                       GetTickCount(),
+                       GetCurrentProcessId());
+
+           // Change current window title.
+
+           SetConsoleTitle(pszNewWindowTitle);
+
+           // Ensure window title has been updated.
+
+           Sleep(40);
+
+           // Look for NewWindowTitle.
+
+           hwndFound=FindWindow(NULL, pszNewWindowTitle);
+
+           // Restore original window title.
+
+           SetConsoleTitle(pszOldWindowTitle);
+       }
+       return(hwndFound);
+   }
+
 
 
 // thread responsible for parsing the commands send by the user.
@@ -804,7 +851,7 @@ void WINAPI CommandPromptThread( void *param )
                         // Initialize OPENFILENAME
                         ZeroMemory(&ofn, sizeof(ofn));
                         ofn.lStructSize = sizeof(ofn);
-                        ofn.hwndOwner = FindCurrentProcessWindow();
+                        ofn.hwndOwner = GetConsoleHWND();
                         ofn.lpstrFile = szFile;
                         //
                         // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
