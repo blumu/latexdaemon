@@ -175,7 +175,7 @@ string output_ext = ".dvi";
 
 
 // Default command line arguments for Tex
-string texoptions = " -interaction=nonstopmode --src-specials -max-print-line=120 ";
+string texoptions = " -interaction=nonstopmode --src-specials "; // -max-print-line=120 
 
 // static dependencies (added by the user) including the main .tex file
 vector<CFilename> static_deps;
