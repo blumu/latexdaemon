@@ -87,6 +87,8 @@ void WINAPI MakeThread( void *param );
 BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam);
 
 // TODO: move the following function to a proper class. After all we are programming in C++!
+void pwd();
+bool spawn(int argc, PTSTR *argv);
 int loadfile( CSimpleGlob &nglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
 DWORD fullcompile();
@@ -145,7 +147,7 @@ HANDLE hEvtDependenciesChanged = NULL;
 #define REG_KEY_GWIN32PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
 
 // path to gsview32.exe
-string gsview32 = "c:\\program files\\ghostgum\\gsview\\gsview32.exe";
+string gsview32;
 
 // by default, gswin32 is not used as a viewer: the program associated with the output file will be used (adobe reader, gsview, ...)
 bool UseGswin32 = false;
@@ -207,8 +209,8 @@ enum {
 	// command line options
 	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
-	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, 
-	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, 
+	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, OPT_PWD,
+	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN,
 	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
 };
 
@@ -270,8 +272,11 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
     { OPT_AUTODEP,		_T("-autodep"),     SO_REQ_CMB  },
     { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
+    { OPT_GSVIEW,		_T("-gsview"),		SO_REQ_CMB  },
+	{ OPT_PWD,			_T("-pwd"),			SO_NONE		},
 	{ OPT_QUIT,			_T("-q"),			SO_NONE		},
 	{ OPT_QUIT,			_T("-quit"),		SO_NONE		},
+	{ OPT_QUIT,			_T("-exit"),		SO_NONE		},
 	{ OPT_EDIT,			_T("-e"),			SO_NONE		},
 	{ OPT_EDIT,			_T("-edit"),		SO_NONE		},
 	{ OPT_VIEWOUTPUT,	_T("-v"),			SO_NONE		},
@@ -282,10 +287,12 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 	{ OPT_VIEWPS,		_T("-viewps"),		SO_NONE		},
 	{ OPT_VIEWPDF,		_T("-vf"),			SO_NONE		},
 	{ OPT_VIEWPDF,		_T("-viewpdf"),		SO_NONE		},
-	{ OPT_OPENFOLDER,	_T("-o"),			SO_NONE		},
-	{ OPT_OPENFOLDER,	_T("-open"),		SO_NONE		},
+	{ OPT_OPENFOLDER,	_T("-x"),			SO_NONE		},
+	{ OPT_OPENFOLDER,	_T("-explorer"),	SO_NONE		},
 	{ OPT_LOAD,			_T("-l"),			SO_NONE		},
 	{ OPT_LOAD,			_T("-load"),		SO_NONE		},
+	{ OPT_SPAWN,		_T("-s"),			SO_NONE		},
+	{ OPT_SPAWN,		_T("-spawn"),		SO_NONE		},
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -475,11 +482,14 @@ void ExecuteOptionForce( string optionarg, JOB &force )
 }
 
 // code for the -gsview option
-void ExecuteOptionGsview()
+void ExecuteOptionGsview( string optionarg )
 {
-	UseGswin32 = true;
 	EnterCriticalSection( &cs );
-	cout << fgNormal << "-Viewer set to GhostView." << endl;
+    UseGswin32 = optionarg!="no";
+    if( UseGswin32 )
+    	cout << fgNormal << "-PS/PDF viewer set to GhostView." << endl;
+	else
+    	cout << fgNormal << "-PS/PDF files will be viewed with the default associated application." << endl;
 	LeaveCriticalSection( &cs );
 }
 
@@ -740,15 +750,16 @@ void WINAPI CommandPromptThread( void *param )
 
         // Convert the command line into an argv table 
         int argc;
-        LPTSTR *argvw;
-        argvw = CommandLineToArgv(cmdline, &argc);
+        PTSTR *argv;
+        argv = CommandLineToArgv(cmdline, &argc);
 
         // Parse the command line
-        CSimpleOpt args(argc, argvw, g_rgPromptOptions, true);
+        CSimpleOpt args(argc, argv, g_rgPromptOptions, true);
         unsigned int uiFlags = 0;
 
         args.Next(); // get the first command recognized
         if (args.LastError() != SO_SUCCESS) {
+            // Set the beginning of the error message
             TCHAR *pszError = _T("Unknown error");
             switch (args.LastError()) {
             case SO_OPT_INVALID:
@@ -767,13 +778,14 @@ void WINAPI CommandPromptThread( void *param )
                 pszError = _T("Required argument is missing");
                 break;
             }
+            // set the end of error message
             EnterCriticalSection( &cs );
                 LPCTSTR optiontext = args.OptionText();
-                // remove the extra '-' that we appened before the command name
+                // remove the extra '-' that we have appened before the command name
                 if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
                     optiontext++;
                 // don't show error message for the empty command
-                if( !(args.LastError()== SO_OPT_INVALID && optiontext[0] == 0) ) {
+                if(  optiontext[0] != 0 ) {
                     cout << fgErr << pszError << ": '" << optiontext << "' (use help to get command line help)"  << endl;
                 }
             LeaveCriticalSection( &cs );
@@ -791,28 +803,34 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_HELP:
             EnterCriticalSection( &cs );
             cout << fgNormal << "The following commands are available:" << endl
-                 << "  b[ibtex]        to run bibtex on the .tex file" << endl
-                 << "  c[compile]      to compile the .tex file using the precompiled preamble" << endl
-                 << "  d[vips]         to convert the .dvi file to postscript" << endl
-                 << "  e[dit]          to edit the .tex file" << endl
-                 << "  f[ullcompile]   to compile the preamble and the .tex file" << endl
-                 << "  h[elp]          to show this message" << endl
-                 << "  l[oad] file.tex to change the active .tex file" << endl
-                 << "  o[pen]          to open the folder containing the .tex file" << endl
-                 << "  p[s2pdf]        to convert the .ps file to pdf" << endl
-                 << "  q[uit]          to quit the program" << endl 
-                 << "  u[sage]         to show the help on command line parameters usage" << endl
-                 << "  v[iew]          to view the output file (dvi or pdf depending on ini value)" << endl
-                 << "  vi|viewdvi      to view the .dvi output file" << endl 
-                 << "  vs|viewps       to view the .ps output file" << endl 
-                 << "  vf|viewpdf      to view the .pdf output file" << endl << endl
-                 << "You can also configure variables with:" << endl
-                 << "  ini=inifile               set the initial format file to inifile" << endl
-                 << "  preamble={none,external}  set the preamble mode for the file to be loaded" << endl
+                 << "Latex related commands:" << endl
+                 << "  b[ibtex]           run bibtex on the .tex file" << endl
+                 << "  c[compile]         compile the .tex file using the precompiled preamble" << endl
+                 << "  d[vips]            convert the .dvi file to postscript" << endl
+                 << "  e[dit]             edit the .tex file" << endl
+                 << "  f[ullcompile]      compile the preamble and the .tex file" << endl
+                 << "  p[s2pdf]           convert the .ps file to pdf" << endl
+                 << "  v[iew]             view the output file (dvi or pdf depending on ini value)" << endl
+                 << "  vi|viewdvi         view the .dvi output file" << endl 
+                 << "  vs|viewps          view the .ps output file" << endl 
+                 << "  vf|viewpdf         view the .pdf output file" << endl 
+                 << "File managment commands:" << endl
+                 << "  l[oad] [file.tex]  change the active tex document" << endl
+                 << "  s[pawn] [file.tex] spawn a new latexdaemon process" << endl
+                 << "  pwd                print working document/directory" << endl
+                 << "  x|explore          explore the folder containing the .tex file" << endl
+                 << "Others:" << endl
+                 << "  u[sage]            show the help on command line parameters usage" << endl
+                 << "  h[elp]             show this message" << endl
+                 << "  q[uit]             quit the program" << endl << endl
+                 << "Options can be configured using the following commands:" << endl
+                 << "  ini=inifile               set the initial format file" << endl
+                 << "  preamble={none,external}  set the preamble mode (reload file to apply)" << endl
                  << "  autodep={yes,no}          activate/deactivate automatic dependency detection" << endl
-                 << "  afterjob={rest,dvips}     set the job executed after latex compilation" << endl
                  << "  watch={yes,no}            activate/deactivate file modification watching" << endl 
-                 << "  filter={highlight|raw|err|warn|err+warn}  set the filter mode for latex ouput. Default: highlight" << endl << endl;
+                 << "  gsview={yes,no}           set GSView as the default viewer (will enable auto-refresh)" << endl
+                 << "  afterjob={rest,dvips}     set a job to be executed after latex compilation" << endl
+                 << "  filter={highlight|raw|err|warn|err+warn}  set the error messages filter mode (highlight by default)." << endl << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
@@ -821,6 +839,7 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());            break;
         case OPT_AUTODEP:		ExecuteOptionAutoDependencies(args.OptionArg()); break;
         case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
+        case OPT_GSVIEW:        {char *p=args.OptionArg(); ExecuteOptionGsview(p?p:"");} break;
         case OPT_BIBTEX:		bibtex();		break;
         case OPT_DVIPS:			dvips();		break;
         case OPT_PS2PDF:		ps2pdf();		break;
@@ -829,15 +848,31 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_VIEWDVI:		view_dvi();		break;
         case OPT_VIEWPS:		view_ps();		break;
         case OPT_VIEWPDF:		view_pdf();		break;
-        case OPT_OPENFOLDER:	openfolder();	break;		
+        case OPT_OPENFOLDER:	openfolder();	break;
+        case OPT_PWD:           pwd();          break;
 
-        case OPT_LOAD:
-            // Read the remaining parameters
+        case OPT_SPAWN: {
+            // read the remaining option parameters
             while (args.Next())
                 uiFlags |= (unsigned int) args.OptionId();
 
+            // parse the filenames parameters (tex file name and dependencies)
+            CSimpleGlob nglob(uiFlags);
+            if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
+                cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+            }
+            else
+                spawn(argc-1, &argv[1]);
+            break;
+        }
+
+        case OPT_LOAD:
             {
-                // parse the parameters (tex file name and dependencies)
+                // read the remaining option parameters
+                while (args.Next())
+                    uiFlags |= (unsigned int) args.OptionId();
+
+                // parse the filenames parameters (tex file name and dependencies)
                 CSimpleGlob nglob(uiFlags);
                 if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
                     cout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
@@ -892,6 +927,7 @@ void WINAPI CommandPromptThread( void *param )
 err_load:
 
             break;
+
         case OPT_COMPILE:
             {
                 bool started = RestartMakeThread(Compile);
@@ -977,7 +1013,7 @@ int _tmain(int argc, TCHAR *argv[])
     // default options, can be overwritten by command line parameters
     JOB initialjob = Rest;
 
-    unsigned int uiFlags = 0;
+    unsigned int uiFlags = 0;    
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
         if (args.LastError() != SO_SUCCESS) {
@@ -1011,7 +1047,7 @@ int _tmain(int argc, TCHAR *argv[])
             case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
             case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
             case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
-            case OPT_GSVIEW:        ExecuteOptionGsview();                              break;
+            case OPT_GSVIEW:        ExecuteOptionGsview("");                            break;
             case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
             case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
             default:                break;
@@ -1055,6 +1091,71 @@ bool FileExists( LPCTSTR filename ) {
     struct stat buffer ;
     return 0 == stat( filename, &buffer );
 }
+
+// print the current directory and document
+void pwd()
+{
+	EnterCriticalSection( &cs );
+    if(texdir!= "" && texbasename!="") {
+        cout << fgNormal << "Current directory: " << texdir << endl
+            << "Current document: " << texbasename << ".tex" << endl;
+    }
+    else {
+        TCHAR path[_MAX_PATH];
+        GetCurrentDirectory(_countof(path), path);
+        cout << fgNormal << "Current directory: " << path << endl
+             << "No document opened." << endl;
+    }
+    LeaveCriticalSection( &cs );
+}
+
+// spawn a new latexdaemon process
+// the (argc,argv) pair gives the parameters that must be given to the spawn process. argv[0] can be set to a dummy value.
+bool spawn(int argc, PTSTR *argv)
+{
+    TCHAR exepath[_MAX_PATH];
+    GetModuleFileName(NULL, exepath, _countof(exepath));
+
+    string cmdline = string(exepath);
+    cmdline += " -ini=";
+    cmdline += texinifile;
+    for(int i = 1; i<argc; i++) // skip the dummy program name
+        cmdline += string(" ") + argv[i];
+
+    // spawn the process
+    LPTSTR szCmdline= _tcsdup(cmdline.c_str());
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    ZeroMemory( &pi, sizeof(pi) );
+    bool bret = CreateProcess( NULL,   // No module name (use command line)
+        szCmdline,      // Command line
+        NULL,           // Process handle not inheritable
+        NULL,           // Thread handle not inheritable
+        FALSE,          // Set handle inheritance to FALSE
+        CREATE_NEW_CONSOLE,              // No creation flags
+        NULL,           // Use parent's environment block
+        NULL,           // Use parent's starting directory 
+        &si,            // Pointer to STARTUPINFO structure
+        &pi ) ? true : false;          // Pointer to PROCESS_INFORMATION structure
+    
+    if( bret ) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    else {
+        EnterCriticalSection( &cs );
+        cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
+        LeaveCriticalSection( &cs ); 
+    }
+
+    free(szCmdline);
+    return bret;
+}
+
+
+
 
 // Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
 int loadfile( CSimpleGlob &depglob, JOB initialjob )
