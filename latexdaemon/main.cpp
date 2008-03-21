@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"28"
+#define BUILD			"29"
 
 // See changelog.html for the list of changes:.
 
@@ -145,6 +145,8 @@ HANDLE hEvtDependenciesChanged = NULL;
 
 // Reg key where to find the path to gswin32
 #define REG_KEY_GWIN32PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
+
+#define DEFAULT_GSVIEW_PATH "c:\\program files\\ghostgum\\gsview\\gsview32.exe";
 
 // path to gsview32.exe
 string gsview32;
@@ -999,6 +1001,8 @@ int _tmain(int argc, TCHAR *argv[])
         RegCloseKey(hkey);
         gsview32 = buff;
     }
+    else
+        gsview32 = DEFAULT_GSVIEW_PATH 
 
     // create the event used to abort the "make" thread
     hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
