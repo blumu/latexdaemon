@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"29"
+#define BUILD			"31"
 
 // See changelog.html for the list of changes:.
 
@@ -144,20 +144,22 @@ HANDLE hEvtStopWatching = NULL;
 HANDLE hEvtDependenciesChanged = NULL;
 
 // Reg key where to find the path to gswin32
-#define REG_KEY_GWIN32PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
+#define REGKEY_GSVIEW32_PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
+#define REGKEY_GSVIEW64_PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview64.exe")
 
-#define DEFAULT_GSVIEW_PATH "c:\\program files\\ghostgum\\gsview\\gsview32.exe";
+#define DEFAULT_GSVIEW32_PATH "c:\\program files\\ghostgum\\gsview\\gsview32.exe"
+#define DEFAULT_GSVIEW64_PATH "c:\\program files\\ghostgum\\gsview\\gsview64.exe"
 
-// path to gsview32.exe
-string gsview32;
+// path to gsview32.exe ou gsview64.exe
+string gsview;
 
 // by default, gswin32 is not used as a viewer: the program associated with the output file will be used (adobe reader, gsview, ...)
 bool UseGswin32 = false;
 
-// process/thread id of the last launched gsview32.exe
-PROCESS_INFORMATION piGsview32 = {NULL, NULL};
-// handle of the main window of gsview32
-HWND hwndGsview32 = NULL;
+// process/thread id of the last instance launched of gsview
+PROCESS_INFORMATION piGsview = {NULL, NULL};
+// handle of the main window of gsview
+HWND hwndGsview = NULL;
 
 // Tex initialization file (can be specified as a command line parameter)
 string texinifile = "latex"; // use latex by default
@@ -593,13 +595,13 @@ DWORD make(JOB makejob)
 			ret = dvips();
 		
 		// has gswin32 been launched?
-		if( piGsview32.dwProcessId ) {
+		if( piGsview.dwProcessId ) {
 			// look for the gswin32 window
-			if( !hwndGsview32 )
-				EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
-			// refresh the gsview32 window 
-			if( hwndGsview32 )
-				PostMessage(hwndGsview32, WM_KEYDOWN, VK_F5, 0xC03F0001);
+			if( !hwndGsview )
+				EnumThreadWindows(piGsview.dwThreadId, LookForGsviewWindow, NULL);
+			// refresh the gsview window 
+			if( hwndGsview )
+				PostMessage(hwndGsview, WM_KEYDOWN, VK_F5, 0xC03F0001);
 		}
 	}
 
@@ -985,6 +987,27 @@ err_load:
 
 }
 
+typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
+
+LPFN_ISWOW64PROCESS fnIsWow64Process;
+
+BOOL IsWow64()
+{
+    BOOL bIsWow64 = FALSE;
+
+    fnIsWow64Process = (LPFN_ISWOW64PROCESS)GetProcAddress(
+        GetModuleHandle(TEXT("kernel32")),"IsWow64Process");
+  
+    if (NULL != fnIsWow64Process)
+    {
+        if (!fnIsWow64Process(GetCurrentProcess(),&bIsWow64))
+        {
+            // handle error
+        }
+    }
+    return bIsWow64;
+}
+
 int _tmain(int argc, TCHAR *argv[])
 {
 
@@ -992,17 +1015,29 @@ int _tmain(int argc, TCHAR *argv[])
 
     cout << endl << fgNormal << APP_NAME << " " << VERSION << " Build " << BUILD << " by William Blum, " VERSION_DATE << endl << endl;;
 
-    // look for gsview32
+    // look for gsview
     HKEY hkey;
-    if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_KEY_GWIN32PATH, 0, KEY_QUERY_VALUE, &hkey) ) {	
-        TCHAR buff[_MAX_PATH];
-        DWORD size = _MAX_PATH;
+    TCHAR buff[_MAX_PATH];
+    DWORD size = _countof(buff);
+    if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REGKEY_GSVIEW32_PATH, 0, KEY_QUERY_VALUE, &hkey) ) {
         RegQueryValueEx(hkey,NULL,NULL,NULL,(LPBYTE)buff,&size);
         RegCloseKey(hkey);
-        gsview32 = buff;
+        gsview = buff;
     }
-    else
-        gsview32 = DEFAULT_GSVIEW_PATH 
+    else if( ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REGKEY_GSVIEW64_PATH, 0, KEY_QUERY_VALUE, &hkey) ) {
+        RegQueryValueEx(hkey,NULL,NULL,NULL,(LPBYTE)buff,&size);
+        RegCloseKey(hkey);
+        gsview = buff;
+    }
+    else { // path by default
+        // running a x86 version of windows?
+        // if( IsWow64() )
+        GetEnvironmentVariable(_T("PROCESSOR_ARCHITECTURE"), buff, _countof(buff));
+        if(_tcscmp(buff, _T("x86")) != 0)
+            gsview = DEFAULT_GSVIEW64_PATH;
+        else
+            gsview = DEFAULT_GSVIEW32_PATH;
+    }
 
     // create the event used to abort the "make" thread
     hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
@@ -1589,21 +1624,21 @@ BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam)
     GetWindowThreadProcessId(hwnd, &pid);
     RealGetWindowClass(hwnd, szClass, sizeof(szClass));
     if( _tcscmp(szClass, _T("gsview_class")) == 0 ) {
-        hwndGsview32 = FindWindowEx(hwnd, NULL, "gsview_img_class", NULL);
+        hwndGsview = FindWindowEx(hwnd, NULL, "gsview_img_class", NULL);
     }
     return TRUE;
 }
 
 // start gsview, 
-int start_gsview32(string filename)
+int start_gsview(string filename)
 {
-    string cmdline = gsview32 + " " + filename;
+    string cmdline = gsview + " " + filename;
 
     STARTUPINFO si;
     LPTSTR szCmdline= _tcsdup(cmdline.c_str());
     ZeroMemory( &si, sizeof(si) );
     si.cb = sizeof(si);
-    ZeroMemory( &piGsview32, sizeof(piGsview32) );
+    ZeroMemory( &piGsview, sizeof(piGsview) );
 
 
     // Start the child process. 
@@ -1617,22 +1652,22 @@ int start_gsview32(string filename)
         NULL,           // Use parent's environment block
         NULL,           // Use parent's starting directory 
         &si,            // Pointer to STARTUPINFO structure
-        &piGsview32 )           // Pointer to PROCESS_INFORMATION structure
+        &piGsview )           // Pointer to PROCESS_INFORMATION structure
     ) {
         EnterCriticalSection( &cs );
         cout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
         LeaveCriticalSection( &cs ); 
         free(szCmdline);
-        piGsview32.hProcess = piGsview32.hThread = NULL;
-        piGsview32.dwThreadId = 0;
+        piGsview.hProcess = piGsview.hThread = NULL;
+        piGsview.dwThreadId = 0;
         return -1;
     }
     else
     {
-        CloseHandle(piGsview32.hProcess);
-        CloseHandle(piGsview32.hThread);
-        hwndGsview32 = NULL;
-        EnumThreadWindows(piGsview32.dwThreadId, LookForGsviewWindow, NULL);
+        CloseHandle(piGsview.hProcess);
+        CloseHandle(piGsview.hThread);
+        hwndGsview = NULL;
+        EnumThreadWindows(piGsview.dwThreadId, LookForGsviewWindow, NULL);
         free(szCmdline);
         return 0;
     }
@@ -1665,7 +1700,7 @@ int view_ps()
         return 0;
 
     if( UseGswin32 )
-        return start_gsview32(texbasename+".ps");
+        return start_gsview(texbasename+".ps");
     else 
         return shellfile_open(texbasename+".ps");
 
@@ -1709,7 +1744,7 @@ int view_pdf()
         return 0;
 
     if( UseGswin32 )
-        return start_gsview32(texbasename+".pdf");
+        return start_gsview(texbasename+".pdf");
     else 
         return shellfile_open(texbasename+".pdf");
 }
@@ -1872,7 +1907,9 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
          &pwdi->buffer[pwdi->curBuffer], /* read results buffer */
          sizeof(pwdi->buffer[pwdi->curBuffer]), /* length of buffer */
          FALSE, /* monitoring option */
-         //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
+         //FILE_NOTIFY_CHANGE_SECURITY|
+         FILE_NOTIFY_CHANGE_CREATION|
+         // FILE_NOTIFY_CHANGE_LAST_ACCESS|
          FILE_NOTIFY_CHANGE_LAST_WRITE
          //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
          , /* filter conditions */
@@ -2024,6 +2061,7 @@ void WINAPI WatchingThread( void *param )
                  sizeof(watchdirs[iTriggeredDir]->buffer[watchdirs[iTriggeredDir]->curBuffer]), /* length of buffer */
                  FALSE, /* monitoring option */
                  //FILE_NOTIFY_CHANGE_SECURITY|FILE_NOTIFY_CHANGE_CREATION| FILE_NOTIFY_CHANGE_LAST_ACCESS|
+                 FILE_NOTIFY_CHANGE_CREATION|
                  FILE_NOTIFY_CHANGE_LAST_WRITE
                  //|FILE_NOTIFY_CHANGE_SIZE |FILE_NOTIFY_CHANGE_ATTRIBUTES |FILE_NOTIFY_CHANGE_DIR_NAME |FILE_NOTIFY_CHANGE_FILE_NAME
                  , /* filter conditions */
