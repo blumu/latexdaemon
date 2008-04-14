@@ -3,7 +3,7 @@
 #define APP_NAME		"LatexDaemon"
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			"31"
+#define BUILD			"32"
 
 // See changelog.html for the list of changes:.
 
@@ -93,7 +93,7 @@ int loadfile( CSimpleGlob &nglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
 DWORD fullcompile();
 DWORD compile();
-int dvips();
+int dvips(string opt);
 int ps2pdf();
 int bibtex();
 int edit();
@@ -592,7 +592,7 @@ DWORD make(JOB makejob)
 	}
 	if( ret==0 ) {
 		if( afterjob == Dvips )
-			ret = dvips();
+			ret = dvips("");
 		
 		// has gswin32 been launched?
 		if( piGsview.dwProcessId ) {
@@ -845,7 +845,6 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
         case OPT_GSVIEW:        {char *p=args.OptionArg(); ExecuteOptionGsview(p?p:"");} break;
         case OPT_BIBTEX:		bibtex();		break;
-        case OPT_DVIPS:			dvips();		break;
         case OPT_PS2PDF:		ps2pdf();		break;
         case OPT_EDIT:			edit();			break;
         case OPT_VIEWOUTPUT:	view();			break;
@@ -854,6 +853,15 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_VIEWPDF:		view_pdf();		break;
         case OPT_OPENFOLDER:	openfolder();	break;
         case OPT_PWD:           pwd();          break;
+
+        case OPT_DVIPS:
+            {
+                string opt;
+                for(int i=2;i<argc;i++)
+                    opt+=string(argv[i]) + " ";
+                dvips(opt);
+            }
+            break;
 
         case OPT_SPAWN: {
             // read the remaining option parameters
@@ -1812,14 +1820,14 @@ int ps2pdf()
 }
 
 // Convert the dvi file to postscript using dvips
-int dvips()
+int dvips(string opt)
 {
     if( !CheckFileLoaded() )
         return 0;
 
     EnterCriticalSection( &cs );
     cout << fgMsg << "-- Converting " << texbasename << ".dvi to postscript...\n";
-    string cmdline = string("dvips ")+texbasename+".dvi -o "+texbasename+".ps";
+    string cmdline = string("dvips ")+texbasename+".dvi " + opt + "-o "+texbasename+".ps";
     cout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
     return launch_and_wait(cmdline.c_str());
