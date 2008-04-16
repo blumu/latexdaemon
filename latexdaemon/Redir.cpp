@@ -203,7 +203,7 @@ BOOL CRedirector::Printf(LPCTSTR pszFormat, size_t cMaxsize, ...)
 	va_list argList;
 
 	va_start(argList, pszFormat);
-	DWORD size = vsprintf_s(pszInput, cMaxsize, pszFormat, argList);
+	DWORD size = _vstprintf_s(pszInput, cMaxsize, pszFormat, argList);
 	va_end(argList);
 
 	DWORD dwWritten;

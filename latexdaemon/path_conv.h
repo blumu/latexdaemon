@@ -27,8 +27,8 @@ using namespace std;
 
 
 #if defined(_MSC_VER)
-	#define path_separator "\\/"
-	#define path_sep_char  '\\'
+	#define path_separator _T("\\/")
+	#define path_sep_char  _T('\\')
 #elif defined(__GNUC__)
 	#define path_separator "/"
 	#define path_sep_char  '/'
@@ -38,12 +38,12 @@ using namespace std;
 
 
 
-typedef queue<char*> QueuePtrChar;
-typedef stack<char*> StackPtrChar;
+typedef queue<PTSTR> QueuePtrChar;
+typedef stack<PTSTR> StackPtrChar;
 
 
-void GetCurrentDir(char* pcTmp);
+void GetCurrentDir(PTSTR pcTmp);
 
-char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const char* pcCurrDir);
-char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const char* pcCurrDir);
+PTSTR Rel2Abs(PCTSTR pcRelPath, PTSTR pcAbsPath, size_t sizeInBytes, PCTSTR pcCurrDir);
+PTSTR Abs2Rel(PCTSTR pcAbsPath, PTSTR pcRelPath, size_t sizeInBytes, PCTSTR pcCurrDir);
 

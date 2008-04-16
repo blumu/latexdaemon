@@ -39,7 +39,7 @@ typedef unsigned      char uchar;
 
 char* PrintMD5(uchar md5Digest[16]);
 char* MD5String(char* szString);
-char* MD5File(char* szFilename);
+char* MD5File(PTSTR szFilename);
 
 class md5
 {
@@ -50,7 +50,7 @@ public:
 	void	Update(uchar* chInput, uint4 nInputLen);
 	void	Finalize();
 	uchar*	Digest() { return m_Digest; }
-	bool	DigestFile(const char* szFilename);
+	bool	DigestFile(PCTSTR szFilename);
 
 private:
 

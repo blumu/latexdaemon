@@ -4,7 +4,11 @@ BOOL GetDirectory (PCTSTR pszFile, PTSTR pszDir, size_t wMaxSize);
 PCTSTR GetFileBaseNamePart( PCTSTR pszPath );
 PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName );
 
-
+#ifdef _UNICODE
+typedef wstring tstring;
+#else
+typedef string tstring;
+#endif
 
 class CFilename {
 public:
@@ -20,7 +24,7 @@ public:
         m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);
     }
 
-    CFilename(string str)
+    CFilename(tstring str)
     {
         init(str.c_str());
     }
@@ -31,8 +35,8 @@ public:
     }
 
 
-    operator string () {
-        return string(m_szFullpath);
+    operator tstring () {
+        return tstring(m_szFullpath);
     }
 
     operator PCTSTR () {
@@ -43,22 +47,22 @@ public:
         return (PCTSTR)m_szFullpath;
     }
 
-    string Relative(string sCurrDir)
+    tstring Relative(tstring sCurrDir)
     {
-        char temp[_MAX_PATH];
+        TCHAR temp[_MAX_PATH];
         Abs2Rel(m_szFullpath,temp,_MAX_PATH, sCurrDir.c_str());
-        return string(temp);
+        return tstring(temp);
     }
 
-    string GetDirectory()
+    tstring GetDirectory()
     {
-        char temp[_MAX_PATH];
+        TCHAR temp[_MAX_PATH];
         ::GetDirectory(m_szFullpath,temp,_MAX_PATH);
-        return string(temp);
+        return tstring(temp);
     }
 
     // create a filename from a relative path
-    CFilename(string sCurrDir, string sRelPath)
+    CFilename(tstring sCurrDir, tstring sRelPath)
     {
         Rel2Abs(sRelPath.c_str(),m_szFullpath, _MAX_PATH, sCurrDir.c_str());
         m_pszBasenamePart = GetFileBaseNamePart(m_szFullpath);

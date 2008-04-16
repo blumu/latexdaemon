@@ -1,6 +1,13 @@
-<p class="date"> ? ? 2008 - Version 0.9 Build 32 </p>
+<p class="date"> ? ? 2008 - Version 0.9 Build 33 </p>
 <ul>
-	<li>Extra parameters to dvi2ps can now be specified a the command prompt.</li>
+	<li>It is now possible to specify extra parameters to dvi2ps at the command prompt.</li>
+	<li>New command 'run' allowing the user to start a shell command. E.g. 'run cmd /c dir'</li>
+	<li>Two new values have been added for the afterjob option: dvipng and custom.
+	The first will run dvipng on the output dvi file after each successful compilation. The second will run the
+	custom command specified in the variable 'custom', passing the path to the .tex file as a parameter.
+	For instance the options '-afterjob=custom -custom="cmd /c dir"' will list file information about 
+	the .tex document after each successful compilation of the latex document.
+	</li>
 </ul>
 
 <p class="date"> 21 March 2008 - Version 0.9 Build 30 </p>

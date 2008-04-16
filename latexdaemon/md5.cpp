@@ -185,7 +185,7 @@ char* MD5File(char* szFilename)
 
 // MD5File: computes the digest from the content of a file.
 // Return true if no error occurs
-bool md5::DigestFile(const char* szFilename)
+bool md5::DigestFile(PCTSTR szFilename)
 {
 	unsigned char chBuffer[1024];
 

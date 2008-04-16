@@ -9,6 +9,7 @@
 
 
 #include <shlwapi.h>
+#include <tchar.h>
 #include "path_conv.h"
 
 //------------------------------------------------------------------------------
@@ -21,32 +22,32 @@
 // Return		: Relative path
 // Author		: Boby Thomas Pazheparampil April 2006
 //------------------------------------------------------------------------------
-char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const char* pcCurrDir)
+PTSTR Abs2Rel(PCTSTR pcAbsPath, PTSTR pcRelPath, size_t sizeInBytes, PCTSTR pcCurrDir)
 {
 
-	char acTmpCurrDir[MAX_PATH];
-	char acTmpAbsPath[MAX_PATH];
-	strcpy_s(acTmpCurrDir,pcCurrDir);
-	strcpy_s(acTmpAbsPath,pcAbsPath);
+	TCHAR acTmpCurrDir[MAX_PATH];
+	TCHAR acTmpAbsPath[MAX_PATH];
+	_tcscpy_s(acTmpCurrDir,pcCurrDir);
+	_tcscpy_s(acTmpAbsPath,pcAbsPath);
 	
 	StackPtrChar tmpStackAbsPath;
 	StackPtrChar tmpStackCurrPath;
 	StackPtrChar tmpStackOutput;
 	QueuePtrChar tmpMatchQueue;
 	
-    char *nextToken;
-	char *sTmp = strtok_s(acTmpAbsPath,path_separator, &nextToken);
+    PTSTR nextToken;
+	PTSTR sTmp = _tcstok_s(acTmpAbsPath,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackAbsPath.push(sTmp);
-		sTmp = strtok_s(NULL, path_separator, &nextToken);
+		sTmp = _tcstok_s(NULL, path_separator, &nextToken);
 	}
 
-	sTmp = strtok_s(acTmpCurrDir,path_separator, &nextToken);
+	sTmp = _tcstok_s(acTmpCurrDir,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackCurrPath.push(sTmp);
-		sTmp = strtok_s(NULL, path_separator, &nextToken);
+		sTmp = _tcstok_s(NULL, path_separator, &nextToken);
 	}
 
 	sTmp = pcRelPath;
@@ -60,14 +61,14 @@ char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const
 
 	while(tmpStackAbsPath.size() > tmpStackCurrPath.size() )
 	{
-		char *pcTmp = tmpStackAbsPath.top();
+		PTSTR pcTmp = tmpStackAbsPath.top();
 		tmpStackOutput.push(pcTmp);
 		tmpStackAbsPath.pop();
 	}
 
 	while(tmpStackAbsPath.size() > 0)
 	{
-		if(_stricmp(tmpStackAbsPath.top(),tmpStackCurrPath.top())== 0  )
+		if(_tcsicmp(tmpStackAbsPath.top(),tmpStackCurrPath.top())== 0  )
 			tmpMatchQueue.push(tmpStackAbsPath.top());
 		else
 		{
@@ -83,7 +84,7 @@ char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const
 	}
 	while(tmpStackOutput.size() > 0)
 	{
-		char *pcTmp= tmpStackOutput.top();
+		PTSTR pcTmp= tmpStackOutput.top();
 		while(*pcTmp != '\0')	
 			*sTmp++ = *pcTmp++;
 		tmpStackOutput.pop();
@@ -105,45 +106,45 @@ char * Abs2Rel(const char *pcAbsPath, char *pcRelPath, size_t sizeInBytes, const
 // Author		: Boby Thomas Pazheparampil April 2006
 //------------------------------------------------------------------------------
 
-char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const char* pcCurrDir)
+PTSTR Rel2Abs(PCTSTR pcRelPath, PTSTR pcAbsPath, size_t sizeInBytes, PCTSTR pcCurrDir)
 {
     ////////////////
     // Modification by William Blum
     if(!PathIsRelative(pcRelPath)) {
-        strcpy_s(pcAbsPath, sizeInBytes, pcRelPath);
+        _tcscpy_s(pcAbsPath, sizeInBytes, pcRelPath);
         return pcAbsPath;
     }
     //////////////////
 
-	char acTmpCurrDir[MAX_PATH];
-	char acTmpRelPath[MAX_PATH];
-	strcpy_s(acTmpCurrDir,pcCurrDir);
-	strcpy_s(acTmpRelPath,pcRelPath);
+	TCHAR acTmpCurrDir[MAX_PATH];
+	TCHAR acTmpRelPath[MAX_PATH];
+	_tcscpy_s(acTmpCurrDir,pcCurrDir);
+	_tcscpy_s(acTmpRelPath,pcRelPath);
 	
 	QueuePtrChar tmpQueueRelPath;
 	StackPtrChar tmpStackCurrPath;
 	StackPtrChar tmpStackOutPath;
 	
-    char *nextToken;
-	char *sTmp = strtok_s(acTmpRelPath,path_separator, &nextToken);
+    PTSTR nextToken;
+	PTSTR sTmp = _tcstok_s(acTmpRelPath,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpQueueRelPath.push(sTmp);
-		sTmp = strtok_s(NULL, path_separator, &nextToken);
+		sTmp = _tcstok_s(NULL, path_separator, &nextToken);
 	}
 
-	sTmp = strtok_s(acTmpCurrDir,path_separator, &nextToken);
+	sTmp = _tcstok_s(acTmpCurrDir,path_separator, &nextToken);
 	while(sTmp)
 	{
 		tmpStackCurrPath.push(sTmp);
-		sTmp = strtok_s(NULL, path_separator, &nextToken);
+		sTmp = _tcstok_s(NULL, path_separator, &nextToken);
 	}
 
 
 	while(tmpQueueRelPath.size() > 0)
 	{
-		char *pcTmp= tmpQueueRelPath.front();
-		if(strcmp(pcTmp, "..") == 0)
+		PTSTR pcTmp= tmpQueueRelPath.front();
+		if(_tcscmp(pcTmp, _T("..")) == 0)
 			tmpStackCurrPath.pop();
 		else
 			tmpStackCurrPath.push(pcTmp);
@@ -162,7 +163,7 @@ char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const
 #endif
 	while(tmpStackOutPath.size() > 0)
 	{
-		char *pcTmp= tmpStackOutPath.top();
+		PTSTR pcTmp= tmpStackOutPath.top();
 		while(*pcTmp != '\0')	
 			*sTmp++ = *pcTmp++;
 		tmpStackOutPath.pop();
@@ -181,7 +182,7 @@ char * Rel2Abs(const char *pcRelPath, char *pcAbsPath, size_t sizeInBytes, const
 // Return		: ---
 // Author		: Boby Thomas Pazheparampil April 2006
 //------------------------------------------------------------------------------
-void GetCurrentDir(char* pcTmp)
+void GetCurrentDir(PTSTR pcTmp)
 {
 
 #if defined(_MSC_VER)
