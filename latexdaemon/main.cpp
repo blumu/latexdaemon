@@ -47,16 +47,7 @@
 #include "global.h"
 using namespace std;
 
-#ifdef _UNICODE
-#define tcout wcout
-#define tcin wcin
-#define tifstream wifstream
-#else
-#define tcout cout
-#define tcin cin
-#define tifstream ifstream
-#endif
-
+#include "tstring.h"
 
 
 //////////
@@ -386,7 +377,7 @@ void SetTitle(tstring state)
 
 
 // Print a string in a given color only if the output is not already occupied, otherwise do nothing
-void print_if_possible( std::ostream& color( std::ostream&  stream ) , tstring str)
+void print_if_possible( std::tostream& color( std::tostream&  stream ) , tstring str)
 {
     if( TryEnterCriticalSection(&cs) ) {
         tcout << color << str << fgPrompt;
@@ -797,13 +788,12 @@ void WINAPI CommandPromptThread( void *param )
         // Read a command from the user
 #define DUMMYCMD        _T("dummy -")
         TCHAR cmdline[PROMPT_MAX_INPUT_LENGTH+_countof(DUMMYCMD)] = DUMMYCMD; // add a dummy command name and the option delimiter
-        tcin.getline(&cmdline[_countof(DUMMYCMD)], PROMPT_MAX_INPUT_LENGTH);
+        tcin.getline(&cmdline[_countof(DUMMYCMD)-1], PROMPT_MAX_INPUT_LENGTH);
 
         // Convert the command line into an argv table 
         int argc;
         PTSTR *argv;
         argv = CommandLineToArgv(cmdline, &argc);
-
         // Parse the command line
         CSimpleOpt args(argc, argv, g_rgPromptOptions, true);
 
@@ -1472,8 +1462,8 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
     DWORD dwRet = 0;
     LPTSTR szCmdline= _tcsdup(cmdline);
 
-    ostreamLatexFilter filtstream(cout.rdbuf(), filt);
-    ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
+    tostreamLatexFilter filtstream(tcout.rdbuf(), filt);
+    tostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
     CRedirector redir(pRedirStream , &cs);
     if( !pRedirStream ) EnterCriticalSection(&cs);
     if( redir.Open(szCmdline) ) {

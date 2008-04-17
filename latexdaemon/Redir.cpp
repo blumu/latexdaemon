@@ -12,6 +12,7 @@
 #include <crtdbg.h>
 #include <iostream>
 #include "Redir.h"
+#include "tstring.h"
 
 using namespace std;
 
@@ -22,7 +23,7 @@ using namespace std;
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-CRedirector::CRedirector(std::ostream *predirout, CRITICAL_SECTION *pcs) :
+CRedirector::CRedirector(std::tostream *predirout, CRITICAL_SECTION *pcs) :
     m_hStdinWrite(NULL),
     m_hStdoutRead(NULL),
     m_hChildProcess(NULL),
@@ -294,7 +295,7 @@ BOOL CRedirector::LaunchChildRedir(LPTSTR pszCmdLine,
 // return: 1: no more data, 0: child terminated, -1: os error
 int CRedirector::RedirectStdout()
 {
-    char szOutput[BUFF_SIZE];
+    TCHAR szOutput[BUFF_SIZE];
     _ASSERT(m_hStdoutRead != NULL);
     for (;;)
     {

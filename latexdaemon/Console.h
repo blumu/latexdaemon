@@ -12,6 +12,8 @@
 #include <iomanip>
 #include <windows.h>
 
+#include "tstring.h"
+
 namespace JadedHoboConsole
 {
     static const WORD bgMask( BACKGROUND_BLUE      | 
@@ -102,14 +104,14 @@ namespace JadedHoboConsole
         }
     } console;
     
-    inline std::ostream& clr( std::ostream& os )
+    inline std::tostream& clr( std::tostream& os )
     {
         os.flush();
         console.Clear();
         return os;
     };
     
-    inline std::ostream& fg_red( std::ostream& os )
+    inline std::tostream& fg_red( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiRed, bgMask );
@@ -117,7 +119,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_green( std::ostream& os )
+    inline std::tostream& fg_green( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiGreen, bgMask );
@@ -125,7 +127,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_blue( std::ostream& os )
+    inline std::tostream& fg_blue( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiBlue, bgMask );
@@ -133,14 +135,14 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_white( std::ostream& os )
+    inline std::tostream& fg_white( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiWhite, bgMask );
         
         return os;
     }
-    inline std::ostream& fg_lowhite( std::ostream& os )
+    inline std::tostream& fg_lowhite( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgLoWhite, bgMask );
@@ -148,21 +150,21 @@ namespace JadedHoboConsole
         return os;
     }
 
-    inline std::ostream& fg_cyan( std::ostream& os )
+    inline std::tostream& fg_cyan( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiCyan, bgMask );
         
         return os;
     }
-    inline std::ostream& fg_locyan( std::ostream& os )
+    inline std::tostream& fg_locyan( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgLoCyan, bgMask );
         
         return os;
     }
-    inline std::ostream& fg_magenta( std::ostream& os )
+    inline std::tostream& fg_magenta( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiMagenta, bgMask );
@@ -170,7 +172,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_yellow( std::ostream& os )
+    inline std::tostream& fg_yellow( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgHiYellow, bgMask );
@@ -178,7 +180,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_black( std::ostream& os )
+    inline std::tostream& fg_black( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgBlack, bgMask );
@@ -186,7 +188,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& fg_gray( std::ostream& os )
+    inline std::tostream& fg_gray( std::tostream& os )
     {
         os.flush();
         console.SetColor( fgGray, bgMask );
@@ -194,7 +196,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_red( std::ostream& os )
+    inline std::tostream& bg_red( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiRed, fgMask );
@@ -202,7 +204,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_green( std::ostream& os )
+    inline std::tostream& bg_green( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiGreen, fgMask );
@@ -210,7 +212,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_blue( std::ostream& os )
+    inline std::tostream& bg_blue( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiBlue, fgMask );
@@ -218,7 +220,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_white( std::ostream& os )
+    inline std::tostream& bg_white( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiWhite, fgMask );
@@ -226,7 +228,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_cyan( std::ostream& os )
+    inline std::tostream& bg_cyan( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiCyan, fgMask );
@@ -234,7 +236,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_magenta( std::ostream& os )
+    inline std::tostream& bg_magenta( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiMagenta, fgMask );
@@ -242,7 +244,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_yellow( std::ostream& os )
+    inline std::tostream& bg_yellow( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgHiYellow, fgMask );
@@ -250,7 +252,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_black( std::ostream& os )
+    inline std::tostream& bg_black( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgBlack, fgMask );
@@ -258,7 +260,7 @@ namespace JadedHoboConsole
         return os;
     }
     
-    inline std::ostream& bg_gray( std::ostream& os )
+    inline std::tostream& bg_gray( std::tostream& os )
     {
         os.flush();
         console.SetColor( bgGray, fgMask );

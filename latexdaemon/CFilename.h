@@ -1,14 +1,13 @@
 #include "path_conv.h"
+#include "tstring.h"
+
+#pragma once
 
 BOOL GetDirectory (PCTSTR pszFile, PTSTR pszDir, size_t wMaxSize);
 PCTSTR GetFileBaseNamePart( PCTSTR pszPath );
 PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName );
 
-#ifdef _UNICODE
-typedef wstring tstring;
-#else
-typedef string tstring;
-#endif
+
 
 class CFilename {
 public:

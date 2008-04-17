@@ -1,7 +1,7 @@
 #include <windows.h>
 #include "CommandLineToArgv.h"
 
-PWCHAR* CommandLineToArgvW( PWCHAR CmdLine, int* _argc )
+PWCHAR* MyCommandLineToArgvW( PWCHAR CmdLine, int* _argc )
 {
     PWCHAR* argv;
     PWCHAR  _argv;
@@ -82,7 +82,7 @@ PWCHAR* CommandLineToArgvW( PWCHAR CmdLine, int* _argc )
 }
 
 
-PCHAR* CommandLineToArgvA( PCHAR CmdLine, int* _argc )
+PCHAR* MyCommandLineToArgvA( PCHAR CmdLine, int* _argc )
 {
     PCHAR* argv;
     PCHAR  _argv;
