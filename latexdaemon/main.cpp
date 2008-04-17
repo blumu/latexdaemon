@@ -1270,7 +1270,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     _tsplitpath( fullpath, drive, dir, mainfile, ext );
 
     if(  _tcsncmp(ext, _T(".tex"), 4) )	{
-        cerr << fgErr << "Error: this file does not seem to be a TeX document!\n\n" << fgNormal;
+        tcerr << fgErr << "Error: this file does not seem to be a TeX document!\n\n" << fgNormal;
         return 2;
     }
 

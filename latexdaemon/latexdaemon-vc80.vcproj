@@ -207,6 +207,10 @@
 				RelativePath=".\resource.h"
 				>
 			</File>
+			<File
+				RelativePath=".\tstring.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Resource Files"

@@ -153,7 +153,7 @@ BOOL CRedirector::Open(LPTSTR pszCmdLine)
             DWORD dwOsErr = ::GetLastError();
             char szMsg[40];
             sprintf_s(szMsg, "[CONSOLE REDIRECTION] Redirect console error: %x\r\n", dwOsErr);
-            cerr << szMsg;
+            tcerr << szMsg;
             DestroyHandle(hStdoutReadTmp);
             DestroyHandle(hStdoutWrite);
             DestroyHandle(hStderrWrite);
@@ -179,7 +179,7 @@ void CRedirector::Close()
 			//::WaitForSingleObject(m_hThread, INFINITE);
 			if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT)
 			{
-				cerr << _T("[CONSOLE REDIRECTION] The redir thread is dead\r\n");
+				tcerr << _T("[CONSOLE REDIRECTION] The redir thread is dead\r\n");
 				::TerminateThread(m_hThread, -2);
 			}
 		}
@@ -326,7 +326,7 @@ int CRedirector::RedirectStdout()
         return 0;	// child process ended
     }
 
-    cerr << "[CONSOLE REDIRECTION] Read stdout pipe error\r\n";
+    tcerr << "[CONSOLE REDIRECTION] Read stdout pipe error\r\n";
     return -1;		// os error
 }
 
