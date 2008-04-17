@@ -1,6 +1,8 @@
 @echo off
 set VSINSTALLDIR=C:\Program Files\Microsoft Visual Studio 9.0
+set VSCRT=%VSINSTALLDIR%\VC\redist\x86\Microsoft.VC90.CRT
 ::set VSINSTALLDIR=D:\Microsoft Visual Studio 8
+::set VSCRT=%VSINSTALLDIR%\VC\redist\x86\Microsoft.VC80.CRT"
 
 
 set VSDEVENV="%VSINSTALLDIR%\Common7\IDE\devenv.com"
