@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("33")
+#define BUILD			_T("34")
 
 
 // See changelog.html for the list of changes:.
@@ -934,6 +934,7 @@ void WINAPI CommandPromptThread( void *param )
             {
                 // parse the filenames parameters (tex file name and dependencies)
                 CSimpleGlob nglob;
+                while (args.Next()); // get the filename passed in parameters
                 if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
                     tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
                 }
@@ -1462,8 +1463,8 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
     DWORD dwRet = 0;
     LPTSTR szCmdline= _tcsdup(cmdline);
 
-    tostreamLatexFilter filtstream(tcout.rdbuf(), filt);
-    tostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
+    ostreamLatexFilter filtstream(cout.rdbuf(), filt);
+    ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
     CRedirector redir(pRedirStream , &cs);
     if( !pRedirStream ) EnterCriticalSection(&cs);
     if( redir.Open(szCmdline) ) {

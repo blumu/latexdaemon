@@ -111,162 +111,35 @@ namespace JadedHoboConsole
         return os;
     };
     
-    inline std::tostream& fg_red( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiRed, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_green( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiGreen, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_blue( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiBlue, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_white( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiWhite, bgMask );
-        
-        return os;
-    }
-    inline std::tostream& fg_lowhite( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgLoWhite, bgMask );
-        
-        return os;
-    }
 
-    inline std::tostream& fg_cyan( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiCyan, bgMask );
-        
-        return os;
-    }
-    inline std::tostream& fg_locyan( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgLoCyan, bgMask );
-        
-        return os;
-    }
-    inline std::tostream& fg_magenta( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiMagenta, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_yellow( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgHiYellow, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_black( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgBlack, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& fg_gray( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( fgGray, bgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_red( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiRed, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_green( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiGreen, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_blue( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiBlue, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_white( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiWhite, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_cyan( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiCyan, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_magenta( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiMagenta, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_yellow( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgHiYellow, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_black( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgBlack, fgMask );
-        
-        return os;
-    }
-    
-    inline std::tostream& bg_gray( std::tostream& os )
-    {
-        os.flush();
-        console.SetColor( bgGray, fgMask );
-        
-        return os;
-    }
+#define DECLARE_COLOR(colname,methodname, mask)  inline std::tostream& methodname( std::tostream& os ) \
+    { os.flush(); \
+      console.SetColor( colname, mask ); \
+      return os; }
+
+    DECLARE_COLOR(fgHiRed,fg_red,bgMask)
+    DECLARE_COLOR(fgHiGreen,fg_green,bgMask)
+    DECLARE_COLOR(fgHiBlue,fg_blue,bgMask)
+    DECLARE_COLOR(fgHiWhite,fg_white,bgMask)
+    DECLARE_COLOR(fgLoWhite,fg_lowhite,bgMask)
+    DECLARE_COLOR(fgHiCyan,fg_cyan,bgMask)
+    DECLARE_COLOR(fgLoCyan,fg_locyan,bgMask)
+    DECLARE_COLOR(fgHiMagenta,fg_magenta,bgMask)
+    DECLARE_COLOR(fgHiYellow,fg_yellow,bgMask)
+    DECLARE_COLOR(fgBlack,fg_black,bgMask)
+    DECLARE_COLOR(fgGray,fg_gray,bgMask)
+
+    DECLARE_COLOR(bgHiRed,bg_red,fgMask)
+    DECLARE_COLOR(bgHiGreen,bg_green,fgMask)
+    DECLARE_COLOR(bgHiBlue,bg_blue,fgMask)
+    DECLARE_COLOR(bgHiWhite,bg_white,fgMask)
+    DECLARE_COLOR(bgHiCyan,bg_cyan,fgMask)
+    DECLARE_COLOR(bgHiMagenta,bg_magenta,fgMask)
+    DECLARE_COLOR(bgHiYellow,bg_yellow,fgMask)
+    DECLARE_COLOR(bgBlack,bg_black,fgMask)
+    DECLARE_COLOR(bgGray,bg_gray,fgMask)
+
+
 }
 
 //------------------------------------------------------------------------------

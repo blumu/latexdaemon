@@ -23,7 +23,7 @@ using namespace std;
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-CRedirector::CRedirector(std::tostream *predirout, CRITICAL_SECTION *pcs) :
+CRedirector::CRedirector(std::ostream *predirout, CRITICAL_SECTION *pcs) :
     m_hStdinWrite(NULL),
     m_hStdoutRead(NULL),
     m_hChildProcess(NULL),
@@ -295,7 +295,7 @@ BOOL CRedirector::LaunchChildRedir(LPTSTR pszCmdLine,
 // return: 1: no more data, 0: child terminated, -1: os error
 int CRedirector::RedirectStdout()
 {
-    TCHAR szOutput[BUFF_SIZE];
+    char szOutput[BUFF_SIZE];
     _ASSERT(m_hStdoutRead != NULL);
     for (;;)
     {
@@ -308,7 +308,8 @@ int CRedirector::RedirectStdout()
             return 1;
 
         DWORD dwRead = 0;
-        if (!::ReadFile(m_hStdoutRead, szOutput, min(sizeof(szOutput)-1, dwAvail),
+        DWORD dwToRead = min(sizeof(szOutput)-1, dwAvail);
+        if (!::ReadFile(m_hStdoutRead, szOutput, dwToRead,
             &dwRead, NULL) || !dwRead)	// error, the child might have ended
             break;
 

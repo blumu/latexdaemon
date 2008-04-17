@@ -23,7 +23,7 @@ public:
     //  - redirout is a pointer to a stream responsible of printing the output
     // - pcs is a pointer to a critical section that controls the console output. It will be entered
     // before printing and left when the output thread finishes.
-    CRedirector(std::tostream *redirout, CRITICAL_SECTION *pcs);
+    CRedirector(std::ostream *redirout, CRITICAL_SECTION *pcs);
 	virtual ~CRedirector();
 
 private:
@@ -40,7 +40,7 @@ protected:
 	HANDLE m_hChildProcess;
     HANDLE m_hChildProcessThread;
 
-    std::tostream *m_predirout;
+    std::ostream *m_predirout;
 
 
     BOOL LaunchChildNoRedir(LPTSTR pszCmdLine);
