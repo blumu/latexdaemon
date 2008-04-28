@@ -2122,16 +2122,16 @@ void WINAPI WatchingThread( void *param )
         int iTriggeredDir; // index of the last directory in which a change has been detected
         while( 1 ) {
             DWORD dwRet = 0;
-            DWORD dwObj = WaitForMultipleObjects(2+(DWORD)nWdi, hp, FALSE, INFINITE ) - WAIT_OBJECT_0;
+            DWORD dwObj = WaitForMultipleObjects(nHdReserved+(DWORD)nWdi, hp, FALSE, INFINITE ) - WAIT_OBJECT_0;
             _ASSERT( dwObj >= 0 && dwObj <= nWdi+nHdReserved );
             if( dwObj == 0 ) { // the user asked to quit the program
                 bContinue = false;
-                goto clean;
+                break;
             }
             else if ( dwObj == 1 ) { // notification of depend change
                 print_if_possible(fgMsg, _T("\n-- Dependencies have changed\n"));
                 bContinue = true;
-                goto clean;
+                break;
             }
             else if ( dwObj >= nHdReserved && dwObj < nWdi+nHdReserved) {
                 iTriggeredDir = dwObj-nHdReserved;
@@ -2139,14 +2139,14 @@ void WINAPI WatchingThread( void *param )
             else {
                 // BUG!
                 bContinue = false;
-                goto clean;
+                break;
             }
 
             // Read the asyncronous result
             DWORD dwNumberbytes;
             GetOverlappedResult(watchdirs[iTriggeredDir]->hDir, &watchdirs[iTriggeredDir]->overl, &dwNumberbytes, FALSE);
 
-            // Switch the 2 buffers
+            // swap the 2 buffers
             watchdirs[iTriggeredDir]->curBuffer =  1- watchdirs[iTriggeredDir]->curBuffer;
 
             // continue to watch the directory in which a change has just been detected
@@ -2248,7 +2248,7 @@ void WINAPI WatchingThread( void *param )
             RestartMakeThread(makejob);
         }
 
-    clean:
+// cleaning
         for(size_t i=0; i<nWdi;i++) {
             CloseHandle(watchdirs[i]->overl.hEvent);
             CloseHandle(watchdirs[i]->hDir);
