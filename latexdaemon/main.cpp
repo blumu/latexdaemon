@@ -1,9 +1,9 @@
-// Copyright William Blum 2007 (http://william.famille-blum.org/software/index.html)
+// Copyright William Blum 2007-2008 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("34")
+#define BUILD			_T("35")
 
 
 // See changelog.html for the list of changes:.
@@ -74,7 +74,7 @@ using namespace std;
 #define ERR_SRCABSENT  0x04
 
 // constants corresponding to the different possible jobs that can be exectuted
-enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, Custom = 5 } ;
+enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, DviPsPdf = 5, Custom = 6 } ;
 
 
 
@@ -97,6 +97,7 @@ bool RestartMakeThread(JOB makejob);
 DWORD fullcompile();
 DWORD compile();
 int dvips(tstring opt);
+int dvipspdf(tstring opt);
 int dvipng(tstring opt);
 int custom(tstring opt);
 int shell(tstring cmdline);
@@ -174,6 +175,9 @@ tstring texinifile = _T("latex"); // use latex by default
 tstring preamble_filename = _T("");
 tstring preamble_basename = _T("");
 
+tstring preamble_format_basename = _T("");
+tstring preamble_format_filename = _T("");
+
 // Path where the main tex file resides
 tstring texdir = _T("");
 tstring texfullpath = _T("");
@@ -222,7 +226,7 @@ enum {
 	// command line options
 	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
-	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, OPT_DVIPNG, OPT_RUN,
+	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
     OPT_CUSTOM, OPT_PWD,
 	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN,
 	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
@@ -276,6 +280,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_BIBTEX,		_T("-bibtex"),		SO_NONE		},
     { OPT_DVIPS,		_T("-d"),			SO_NONE		},
     { OPT_DVIPS,		_T("-dvips"),		SO_NONE		},
+    { OPT_DVIPSPDF,		_T("-dvipspdf"),    SO_NONE		},
     { OPT_DVIPNG,		_T("-dvipng"),	    SO_NONE		},
     { OPT_RUN,		    _T("-r"),	        SO_NONE		},
     { OPT_RUN,		    _T("-run"),	        SO_NONE		},
@@ -341,10 +346,11 @@ void ShowUsage(TCHAR *progname) {
          << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
          << " --autodep={yes|no}" << endl 
          << "   Activate the automatic detection of dependencies." << endl << endl
-         << " --afterjob={dvips|dvipng|custom|rest}" << endl 
+         << " --afterjob={dvips|dvipng|dvipspdf|custom|rest}" << endl 
          << "   Specifies what should be done after a successful compilation of the .tex file." << endl 
          << "     . 'dvips' run dvips on the output dvi file," <<endl
          << "     . 'dvipng' run dvipng on the output dvi file," <<endl
+         << "     . 'dvips2pdf' run dvips followed by ps2pdf," <<endl
          << "     . 'custom' run a custom command line specified with the '-custom' option," <<endl
          << "     . 'rest' (default) do nothing."<<endl
          << " --custom=\"COMMAND LINE\"" << endl 
@@ -467,6 +473,71 @@ void StopAndWaitUntilEnd_WatchingThread()
     hWatchingThread = NULL;
 }
 
+bool IsFileLoaded()
+{
+    return ( texbasename != _T("") );
+}
+
+// Check that a file has been loaded
+bool CheckFileLoaded()
+{
+	if( !IsFileLoaded() ) {
+		EnterCriticalSection( &cs );
+		tcout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
+		LeaveCriticalSection( &cs ); 
+		return false;
+	}
+	else
+		return true;
+}
+
+
+
+// set the name of the preamble format file
+void SetPreambleFormatName()
+{
+    preamble_format_basename = preamble_basename + _T("-") + texinifile;
+    preamble_format_filename = preamble_format_basename + _T(".fmt");
+}
+
+bool PreambleFormatFileUptodate()
+{
+    ///////////////////
+    // If an external preamble file is used then check if the preamble dependencies have been touched since last compilation
+    if( ExternalPreamblePresent ) {
+        ReadDependencies(texbasename+_T("-preamble.dep"), auto_preamb_deps);
+        tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
+
+        // compare the timestamp of the preamble file with the format file
+        int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filename.c_str());
+
+        // If the format file is older than the preamble file
+        if( res == SRC_FRESHER ) {
+            // then it is necessary to recreate the format file and to perform a full recompilation
+            return false;
+            tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+        }
+        // if the format file does not exist
+        else if ( res & ERR_OUTABSENT ) {
+            return false;
+            tcout << fgMsg << "+ " << preamble_format_filename << " does not exist. Let's create it...\n";
+        }
+
+
+        // Check if some preamble dependency has been tooched
+        for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
+            it!= auto_preamb_deps.end(); it++) {
+            res = compare_timestamp(it->c_str(), preamble_format_filename.c_str());
+
+            if( res == SRC_FRESHER ) {
+                tcout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 
 // Code executed when the -ini option is specified
 void ExecuteOptionIni( tstring optionarg )
@@ -478,6 +549,14 @@ void ExecuteOptionIni( tstring optionarg )
         output_ext = _T(".pdf");
     else if ( texinifile == _T("latex") || texinifile == _T("tex") )
         output_ext = _T(".dvi");
+    else 
+        output_ext = _T(".dvi"); // dvi by default
+
+    if( IsFileLoaded() ) {
+        SetPreambleFormatName(); // reset the name of the current preamble format file
+        if( !PreambleFormatFileUptodate() )
+            fullcompile();           // recompile the preamble format file
+    }
 }
 // Code executed when the -preamble option is specified
 void ExecuteOptionPreamble( tstring optionarg )
@@ -526,6 +605,8 @@ void ExecuteOptionAfterJob( tstring optionarg )
 		afterjob = Dvips;
     else if( optionarg==_T("dvipng") )
 		afterjob = DviPng;
+    else if( optionarg==_T("dvipspdf") )
+		afterjob = DviPsPdf;
     else if( optionarg==_T("custom") )
         afterjob = Custom;
 	else {
@@ -628,6 +709,8 @@ DWORD make(JOB makejob)
 			ret = dvips(_T(""));
         else if ( afterjob == DviPng )
 			ret = dvipng(_T(""));
+        else if ( afterjob == DviPsPdf )
+			ret = dvipspdf(_T(""));
         else if ( afterjob == Custom )
             ret = custom(_T(""));
 		
@@ -845,34 +928,39 @@ void WINAPI CommandPromptThread( void *param )
                  << "Latex related commands:" << endl
                  << "  b[ibtex]           run bibtex on the .tex file" << endl
                  << "  c[compile]         compile the .tex file using the precompiled preamble" << endl
-                 << "  d[vips]            convert the .dvi file to postscript" << endl
-                 << "  dvipng             convert the .dvi file to PNG" << endl
-                 << "  r[un] COMMANDLINE  execute a shell command" << endl
-                 << "  e[dit]             edit the .tex file" << endl
+                 << "  d[vips]            DVI -> PS conversion" << endl
+                 << "  dvipspdf           DVI -> PS -> PDF conversion" << endl
+                 << "  dvipng             DVI -> PNG conversion" << endl
                  << "  f[ullcompile]      compile the preamble and the .tex file" << endl
-                 << "  p[s2pdf]           convert the .ps file to pdf" << endl
-                 << "  v[iew]             view the output file (dvi or pdf depending on ini value)" << endl
-                 << "  vi|viewdvi         view the .dvi output file" << endl 
-                 << "  vs|viewps          view the .ps output file" << endl 
-                 << "  vf|viewpdf         view the .pdf output file" << endl 
+                 << "  p[s2pdf]           PS -> PDF conversion" << endl
+                 << "  v[iew]             view the output file (DVI or PDF depending on ini value)" << endl
+                 << "  vi|viewdvi         view the DVI file" << endl 
+                 << "  vs|viewps          view the PS file" << endl 
+                 << "  vf|viewpdf         view the PDF file" << endl 
                  << "File managment commands:" << endl
+                 << "  e[dit]             edit the .tex file" << endl
                  << "  l[oad] [file.tex]  change the active tex document" << endl
-                 << "  s[pawn] [file.tex] spawn a new latexdaemon process" << endl
                  << "  pwd                print working document/directory" << endl
+                 << "  s[pawn] [file.tex] spawn a new latexdaemon process" << endl
                  << "  x|explore          explore the folder containing the .tex file" << endl
                  << "Others:" << endl
-                 << "  u[sage]            show the help on command line parameters usage" << endl
                  << "  h[elp]             show this message" << endl
-                 << "  q[uit]             quit the program" << endl << endl
+                 << "  q[uit]             quit the program" << endl
+                 << "  r[un] COMMANDLINE  execute a shell command" << endl
+                 << "  u[sage]            show the help on command line parameters usage" << endl << endl
                  << "Options can be configured using the following commands:" << endl
-                 << "  ini=inifile               set the initial format file" << endl
-                 << "  preamble={none,external}  set the preamble mode (reload file to apply)" << endl
-                 << "  autodep={yes,no}          activate/deactivate automatic dependency detection" << endl
-                 << "  watch={yes,no}            activate/deactivate file modification watching" << endl 
-                 << "  gsview={yes,no}           set GSView as the default viewer (will enable auto-refresh)" << endl
-                 << "  afterjob={rest,dvips,dvipng,custom} set a job to be executed after latex compilation" << endl
-                 << "  custom=\"COMMAND LINE\"     set custom command to execute when afterjob='custom'" << endl
-                 << "  filter={highlight|raw|err|warn|err+warn}  set the error messages filter mode (highlight by default)." << endl << endl;
+                 << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
+                 << "          set the job to be executed after latex compilation" << endl
+                 << "  autodep={yes|no}          automatic dependency detection" << endl
+                 << "  custom=\"COMMAND LINE\"" << endl
+                 << "          set a custom command to execute when afterjob is set to custom" << endl
+                 << "  filter={highlight|raw|err|warn|err+warn}" << endl
+                 << "          set the error messages filter mode (highlight by default)." << endl
+                 << "  gsview={yes|no}" << endl
+                 << "          view PS/PDF with GSView and send auto-refresh notifications" << endl
+                 << "  ini=inifile               set the initial format file (default to latex)" << endl
+                 << "  preamble={none|external}  set the preamble mode (reload file to apply)" << endl
+                 << "  watch={yes|no}            activate/deactivate file modification watching" << endl  << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
@@ -907,6 +995,14 @@ void WINAPI CommandPromptThread( void *param )
                 for(int i=2;i<argc;i++)
                     opt+=tstring(argv[i]) + _T(" ");
                 dvips(opt);
+            }
+            break;
+        case OPT_DVIPSPDF:
+            {
+                tstring opt;
+                for(int i=2;i<argc;i++)
+                    opt+=tstring(argv[i]) + _T(" ");
+                dvipspdf(opt);
             }
             break;
 
@@ -1253,7 +1349,6 @@ bool spawn(int argc, PTSTR *argv)
 
 
 
-
 // Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
 int loadfile( CSimpleGlob &depglob, JOB initialjob )
 {
@@ -1341,42 +1436,9 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     // what kind of compilation is needed to update the output file (format & .dvi file) ?
     JOB job = initialjob;  // by default it is the job requested by the user (using command line options)
 
-
-    ///////////////////
-    // Check if the preambles dependencies have been touched since last compilation (if an external preamble file is used)
-
-    if( ExternalPreamblePresent ) {
-        ReadDependencies(texbasename+_T("-preamble.dep"), auto_preamb_deps);
-        tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
-
-        // compare the timestamp of the preamble file with the format file
-        int res = compare_timestamp(preamble_filename.c_str(), (preamble_basename+_T(".fmt")).c_str());
-
-        // If the format file is older than the preamble file
-        if( res == SRC_FRESHER ) {
-            // then it is necessary to recreate the format file and to perform a full recompilation
-            job = FullCompile;
-            tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
-        }
-        // if the format file does not exist
-        else if ( res & ERR_OUTABSENT ) {
-            job = FullCompile;
-            tcout << fgMsg << "+ " << preamble_basename << ".fmt does not exist. Let's create it...\n";
-        }
-
-
-        // Check if some preamble dependency has been tooched
-        if( job != FullCompile )
-            for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
-                it!= auto_preamb_deps.end(); it++) {
-                res = compare_timestamp(it->c_str(), (preamble_basename+_T(".fmt")).c_str());
-                if( res == SRC_FRESHER ) {
-                    tcout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
-                    job = FullCompile;
-                }
-            }
-    }
-
+    SetPreambleFormatName(); // set the name of the preamble format file
+    if( !PreambleFormatFileUptodate() )
+        job = FullCompile;
     
     // Initialize the .tex file dependency list
     ReadDependencies(texbasename+_T(".dep"), auto_deps);
@@ -1499,19 +1561,6 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
     return dwRet;
 }
 
-// Check that a file has been loaded
-bool CheckFileLoaded()
-{
-	if( texbasename == _T("") ) {
-		EnterCriticalSection( &cs );
-		tcout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
-		LeaveCriticalSection( &cs ); 
-		return false;
-	}
-	else
-		return true;
-}
-
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
 DWORD fullcompile()
 {
@@ -1566,6 +1615,8 @@ DWORD fullcompile()
         DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
         if( ret )
             return ret;
+        // add the ini format file as a suffix to the generated format file
+        MoveFile( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filename.c_str());
     }
 
     return compile();
@@ -1585,8 +1636,8 @@ DWORD compile()
             latex_post; 
 
     if( ExternalPreamblePresent ) {
-        texengine = _T("pdftex");
-        formatfile = preamble_basename;
+        texengine = _T("pdftex");        
+        formatfile = preamble_format_basename;
     }
     else {
         texengine = texinifile; // 'texinifile' is equal to "latex" or "pdflatex" depending on the daemon -ini options
@@ -1882,6 +1933,27 @@ int dvips(tstring opt)
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
     LeaveCriticalSection( &cs ); 
     return launch_and_wait(cmdline.c_str());
+}
+
+// Convert the DVI file to PDF using dvips and ps2pdf
+int dvipspdf(tstring opt)
+{
+    if( !CheckFileLoaded() )
+        return 0;
+
+    EnterCriticalSection( &cs );
+    tcout << fgMsg << _T("-- Converting ") << texbasename << _T(".dvi to PDF...\n");
+
+    tstring cmdline = tstring(_T("dvips "))+texbasename+_T(".dvi ") + opt + _T("-o ")+texbasename+_T(".ps");
+    tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
+    int ret = launch_and_wait(cmdline.c_str());
+    if(ret == 0 ) {
+        cmdline = tstring(_T("ps2pdf "))+texbasename+_T(".ps ")+texbasename+_T(".pdf");
+        tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
+        int ret = launch_and_wait(cmdline.c_str());
+    }
+    LeaveCriticalSection( &cs ); 
+    return ret;
 }
 
 // Convert the dvi file to PNG using dvipng
