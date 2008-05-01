@@ -10,4 +10,6 @@ REM Uncomment one of the following line depending on which version of the Micros
 rem "C:\Program Files\Microsoft SDKs\Windows\v6.0\Bin\SetEnv.cmd"
 @call "%VSINSTALLDIR%\VC\vcvarsall.bat"
 
+set PROJFILE=latexdaemon.vcproj
+
 Title Latexdameon Build Environment
