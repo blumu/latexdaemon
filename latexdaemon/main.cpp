@@ -1616,7 +1616,13 @@ DWORD fullcompile()
         if( ret )
             return ret;
         // add the ini format file as a suffix to the generated format file
-        MoveFile( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filename.c_str());
+        if( !MoveFileEx( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filename.c_str(), MOVEFILE_REPLACE_EXISTING) ) {
+            DWORD err = GetLastError();
+            EnterCriticalSection( &cs );
+            tcout << fgErr << "Cannot rename format file (MoveFileEx failed with error code "<< err << ")\n" << fgNormal;
+            LeaveCriticalSection( &cs ); 
+            return err;
+        }
     }
 
     return compile();
