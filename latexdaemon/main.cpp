@@ -103,6 +103,7 @@ int custom(tstring opt);
 int shell(tstring cmdline);
 int ps2pdf();
 int bibtex();
+int makeindex();
 int edit();
 int view();
 int view_dvi();
@@ -226,7 +227,7 @@ enum {
 	// command line options
 	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
-	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
+	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_MAKEINDEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
     OPT_CUSTOM, OPT_PWD,
 	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN,
 	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
@@ -280,6 +281,8 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_USAGE,		_T("-usage"),		SO_NONE		},
     { OPT_BIBTEX,		_T("-b"),			SO_NONE		},
     { OPT_BIBTEX,		_T("-bibtex"),		SO_NONE		},
+    { OPT_MAKEINDEX,	_T("-mi"),			SO_NONE		},
+    { OPT_MAKEINDEX,    _T("-makeindex"),   SO_NONE		},
     { OPT_DVIPS,		_T("-d"),			SO_NONE		},
     { OPT_DVIPS,		_T("-dvips"),		SO_NONE		},
     { OPT_DVIPSPDF,		_T("-dvipspdf"),    SO_NONE		},
@@ -970,12 +973,13 @@ void WINAPI CommandPromptThread( void *param )
             EnterCriticalSection( &cs );
             tcout << fgNormal << "The following commands are available:" << endl
                  << "Latex related commands:" << endl
-                 << "  b[ibtex]           run bibtex on the .tex file" << endl
+                 << "  b[ibtex]           build the bibliography file using bibtex" << endl
                  << "  c[compile]         compile the .tex file using the precompiled preamble" << endl
                  << "  d[vips]            DVI -> PS conversion" << endl
                  << "  dvipspdf           DVI -> PS -> PDF conversion" << endl
                  << "  dvipng             DVI -> PNG conversion" << endl
                  << "  f[ullcompile]      compile the preamble and the .tex file" << endl
+                 << "  mi|makeindex       build the index file using makeindex" << endl
                  << "  p[s2pdf]           PS -> PDF conversion" << endl
                  << "  v[iew]             view the output file (DVI or PDF depending on ini value)" << endl
                  << "  vi|viewdvi         view the DVI file" << endl 
@@ -1019,6 +1023,7 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
         case OPT_GSVIEW:        {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
         case OPT_BIBTEX:		bibtex();		break;
+        case OPT_MAKEINDEX:		makeindex();	break;
         case OPT_PS2PDF:		ps2pdf();		break;
         case OPT_EDIT:			edit();			break;
         case OPT_VIEWOUTPUT:	view();			break;
@@ -2073,7 +2078,7 @@ int bibtex()
         return 0;
 
     EnterCriticalSection( &cs );
-    tcout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
+    tcout << fgMsg << "-- Bibtexing " << texbasename << ".tex...\n";
     tstring cmdline = tstring(_T("bibtex "));
     if( auxdir != _T("") )
         cmdline += auxdir+_T("\\");
@@ -2083,6 +2088,23 @@ int bibtex()
     return launch_and_wait(cmdline.c_str());
 }
 
+
+// Run makeindex
+int makeindex()
+{
+    if( !CheckFileLoaded() )
+        return 0;
+
+    EnterCriticalSection( &cs );
+    tcout << fgMsg << "-- Makeindex for " << texbasename << ".tex...\n";
+    tstring cmdline = tstring(_T("makeindex "));
+    if( auxdir != _T("") )
+        cmdline += auxdir+_T("\\");
+    cmdline += texbasename;
+    tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    LeaveCriticalSection( &cs ); 
+    return launch_and_wait(cmdline.c_str());
+}
 
 // Restart the make thread if necessary.
 // returns true if a thread has been launched successfuly.
