@@ -177,7 +177,7 @@ tstring preamble_filename = _T("");
 tstring preamble_basename = _T("");
 
 tstring preamble_format_basename = _T("");
-tstring preamble_format_filename = _T("");
+tstring preamble_format_filepath = _T("");
 
 // Path where the main tex file resides
 tstring texdir = _T("");
@@ -454,6 +454,25 @@ void AddDeps(vector<CFilename> &target, vector<CFilename> &add)
 
 }
 
+
+// Return the path to the auxiliary files directory
+tstring GetAuxDirPath()
+{
+    return texdir+_T("\\")+auxdir;
+}
+
+// return the path to the dependency file for the preamble
+tstring GetPreambleDependFilePath()
+{
+    return GetAuxDirPath()+_T("\\")+texbasename+_T("-preamble.dep");
+}
+
+// return the path to the dependency file for the main .tex file
+tstring GetDependFilePath()
+{
+    return GetAuxDirPath()+_T("\\")+texbasename+_T(".dep");
+}
+
 // Refresh the list of automatic dependencies
 // - if bPreamble = true then refresh the preamble dependencies as well.
 // - if bReplace = true then the automatic are recomputed completely and replaced,
@@ -462,7 +481,7 @@ void RefreshDependencies(bool bPreamble, bool bReplace) {
     bool depChanged = false;
 
     vector<CFilename> new_deps;
-    ReadDependencies(texbasename+_T(".dep"), new_deps);
+    ReadDependencies(GetDependFilePath().c_str(), new_deps);
     if(!bReplace)
         AddDeps(new_deps, auto_deps);
     // Compare new_deps and auto_deps
@@ -470,7 +489,7 @@ void RefreshDependencies(bool bPreamble, bool bReplace) {
     
     vector<CFilename> new_preamb_deps;
     if( bPreamble ) {
-        ReadDependencies(texbasename+_T("-preamble.dep"), new_preamb_deps);
+        ReadDependencies(GetPreambleDependFilePath().c_str(), new_preamb_deps);
         if(!bReplace)
             AddDeps(new_preamb_deps, auto_preamb_deps);
         depChanged |= 0!=CompareDeps(new_preamb_deps, auto_preamb_deps);
@@ -526,19 +545,20 @@ bool CheckFileLoaded()
 void SetPreambleFormatName()
 {
     preamble_format_basename = preamble_basename + _T("-") + texinifile;
-    preamble_format_filename = preamble_format_basename + _T(".fmt");
+    preamble_format_filepath = GetAuxDirPath() + _T("\\") + preamble_format_basename + _T(".fmt");
 }
+
 
 bool PreambleFormatFileUptodate()
 {
     ///////////////////
     // If an external preamble file is used then check if the preamble dependencies have been touched since last compilation
     if( ExternalPreamblePresent ) {
-        ReadDependencies(texbasename+_T("-preamble.dep"), auto_preamb_deps);
+        ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
         tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
 
         // compare the timestamp of the preamble file with the format file
-        int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filename.c_str());
+        int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filepath.c_str());
 
         // If the format file is older than the preamble file
         if( res == SRC_FRESHER ) {
@@ -549,14 +569,14 @@ bool PreambleFormatFileUptodate()
         // if the format file does not exist
         else if ( res & ERR_OUTABSENT ) {
             return false;
-            tcout << fgMsg << "+ " << preamble_format_filename << " does not exist. Let's create it...\n";
+            tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
         }
 
 
         // Check if some preamble dependency has been tooched
         for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
             it!= auto_preamb_deps.end(); it++) {
-            res = compare_timestamp(it->c_str(), preamble_format_filename.c_str());
+            res = compare_timestamp(it->c_str(), preamble_format_filepath.c_str());
 
             if( res == SRC_FRESHER ) {
                 tcout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
@@ -765,12 +785,6 @@ DWORD make(JOB makejob)
 
 	SetTitle( ret ? _T("(errors) monitoring") : _T("monitoring"));
 	return ret;
-}
-
-// Return the path to the auxiliary files directory
-LPCTSTR GetAuxDirPath()
-{
-    return (texdir+_T("\\")+auxdir).c_str();
 }
 
 // thread responsible of launching the external commands (latex) for compilation
@@ -1493,7 +1507,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
         job = FullCompile;
     
     // Initialize the .tex file dependency list
-    ReadDependencies(texbasename+_T(".dep"), auto_deps);
+    ReadDependencies(GetDependFilePath().c_str(), auto_deps);
 
     // If the preamble file does not need to be recompiled
     // and if compilation of the .tex file is not requested by the user
@@ -1655,7 +1669,7 @@ DWORD fullcompile()
         tstring auxopt = _T("");
         if( auxdir != _T("") ) {
             auxopt = _T(" -aux-directory=")+auxdir;
-            LPCTSTR auxdirpath = GetAuxDirPath();
+            LPCTSTR auxdirpath = GetAuxDirPath().c_str();
             if(!FileExists(auxdirpath))
                 CreateDirectory(auxdirpath, NULL);
         }
@@ -1679,7 +1693,7 @@ DWORD fullcompile()
             return ret;
         // add the ini format file as a suffix to the generated format file
         /*
-        if( !MoveFileEx( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filename.c_str(), MOVEFILE_REPLACE_EXISTING) ) {
+        if( !MoveFileEx( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filepath.c_str(), MOVEFILE_REPLACE_EXISTING) ) {
             DWORD err = GetLastError();
             EnterCriticalSection( &cs );
             tcout << fgErr << "Cannot rename format file (MoveFileEx failed with error code "<< err << ")\n" << fgNormal;
@@ -1772,7 +1786,7 @@ DWORD compile()
     tstring auxopt = _T("");
     if( auxdir != _T("") ) {
         auxopt = _T(" -aux-directory=")+auxdir;
-        LPCTSTR auxdirpath = GetAuxDirPath();
+        LPCTSTR auxdirpath = GetAuxDirPath().c_str();
         if(!FileExists(auxdirpath))
             CreateDirectory(auxdirpath, NULL);
     }
