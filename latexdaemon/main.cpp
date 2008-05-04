@@ -183,8 +183,8 @@ tstring texdir = _T("");
 tstring texfullpath = _T("");
 tstring texbasename = _T("");
 
-// name of the backup file for the .aux file
-tstring auxbackupname = _T("");
+// default auxiliary files directory
+tstring auxdir = _T("TeXAux");
 
 // by default the output extension is set to ".dvi", it must be changed to ".pdf" if pdflatex is used
 tstring output_ext = _T(".dvi");
@@ -224,7 +224,7 @@ typedef struct {
 // define the ID values to indentify the option
 enum { 
 	// command line options
-	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
+	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
 	// prompt commands
 	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
     OPT_CUSTOM, OPT_PWD,
@@ -258,6 +258,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_CUSTOM,		_T("--custom"),	    SO_REQ_CMB },
 	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB },
     { OPT_WATCH,		_T("--watch"),		SO_REQ_CMB },
+    { OPT_AUXDIR,		_T("-aux-directory"), SO_REQ_CMB },
+    { OPT_AUXDIR,		_T("--aux-directory"), SO_REQ_CMB },
 	{ OPT_AUTODEP,		_T("-autodep"),		SO_REQ_CMB },
     { OPT_AUTODEP,		_T("--autodep"),	SO_REQ_CMB },
     { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
@@ -291,6 +293,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
     { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
     { OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
+    { OPT_AUXDIR,		_T("-aux-directory"), SO_REQ_CMB },
     { OPT_FILTER,		_T("-filter"),		SO_REQ_CMB  },
     { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
     { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
@@ -335,6 +338,8 @@ void ShowUsage(TCHAR *progname) {
          << "* options can be:" << endl
          << " --help" << endl 
          << "   Show this help message." <<endl<<endl
+         << " --aux-directory=DIR" << endl 
+         << "   Use DIR as the directory to write auxiliary files to."<<endl<<endl
          << " --watch={yes|no}" << endl 
          << "   If set to yes then it will run the necessary compilation and then exit without watching for file changes."<<endl<<endl
          << " --force {compile|fullcompile}" << endl
@@ -667,6 +672,15 @@ void ExecuteOptionWatch( tstring optionarg )
 	}
 }
 
+// Code executed when the -aux-directory option is specified
+void ExecuteOptionAuxDirectory( tstring optionarg )
+{
+	EnterCriticalSection( &cs );
+    auxdir = optionarg;
+	tcout << fgNormal << "-Auxiliray files directory set to '" << optionarg << "'" << endl;
+	LeaveCriticalSection( &cs );
+}
+
 // Code executed when the -filter option is specified
 void ExecuteOptionOutputFilter( tstring optionarg )
 {
@@ -750,7 +764,11 @@ DWORD make(JOB makejob)
 	return ret;
 }
 
-
+// Return the path to the auxiliary files directory
+LPCTSTR GetAuxDirPath()
+{
+    return (texdir+_T("\\")+auxdir).c_str();
+}
 
 // thread responsible of launching the external commands (latex) for compilation
 void WINAPI MakeThread( void *param )
@@ -759,16 +777,21 @@ void WINAPI MakeThread( void *param )
     // perform the necessary compilations
     MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
 
+    // name of the backup file for the .aux file
+    tstring auxfilepath = tstring(GetAuxDirPath())+texbasename+_T(".aux");
+    tstring auxbackupfilepath = auxfilepath+_T(".bak");
+
     if( p->makejob == Compile ) {
         // Make a copy of the .aux file (in case the latex compilation aborts and destroy the .aux file)
-        CopyFile((texdir+texbasename+_T(".aux")).c_str(), (texdir+auxbackupname).c_str(), FALSE);
+        CopyFile(auxfilepath.c_str(), auxbackupfilepath.c_str(), FALSE);
     }
 
     DWORD errcode = make(p->makejob);
 
+    // If the compilation had errors then    
     if( p->makejob == Compile && errcode == -1) 
-        // Restore the backup of the .aux file
-        CopyFile((texdir+auxbackupname).c_str(), (texdir+texbasename+_T(".aux")).c_str(), FALSE);
+        // restore the backup copy of the .aux file.
+        CopyFile(auxbackupfilepath.c_str(), auxfilepath.c_str(), FALSE);
     
     // restore the prompt    
     print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING );
@@ -971,17 +994,19 @@ void WINAPI CommandPromptThread( void *param )
                  << "  u[sage]            show the help on command line parameters usage" << endl << endl
                  << "Options can be configured using the following commands:" << endl
                  << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
-                 << "          set the job to be executed after latex compilation" << endl
+                 << "          job to be executed after latex compilation" << endl
                  << "  autodep={yes|no}          automatic dependency detection" << endl
+                 << "  aux-directory=DIR" << endl
+                 << "          Use DIR as the directory to write auxiliary files to."<<endl
                  << "  custom=\"COMMAND LINE\"" << endl
-                 << "          set a custom command to execute when afterjob is set to custom" << endl
+                 << "          custom command to execute when afterjob is set to custom" << endl
                  << "  filter={highlight|raw|err|warn|err+warn}" << endl
-                 << "          set the error messages filter mode (highlight by default)." << endl
+                 << "          error messages filter mode (highlight by default)." << endl
                  << "  gsview={yes|no}" << endl
                  << "          view PS/PDF with GSView and send auto-refresh notifications" << endl
-                 << "  ini=inifile               set the initial format file (default to latex)" << endl
-                 << "  preamble={none|external}  set the preamble mode (reload file to apply)" << endl
-                 << "  watch={yes|no}            activate/deactivate file modification watching" << endl  << endl;
+                 << "  ini=inifile               initial format file (default to latex)" << endl
+                 << "  preamble={none|external}  preamble mode (reload file to apply)" << endl
+                 << "  watch={yes|no}            activation of the file modification watching" << endl  << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
@@ -989,6 +1014,7 @@ void WINAPI CommandPromptThread( void *param )
         case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());         break;
         case OPT_CUSTOM:		ExecuteOptionCustom(args.OptionArg());         break;
         case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());            break;
+        case OPT_AUXDIR:	    ExecuteOptionAuxDirectory(args.OptionArg());            break;
         case OPT_AUTODEP:		ExecuteOptionAutoDependencies(args.OptionArg()); break;
         case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
         case OPT_GSVIEW:        {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
@@ -1258,6 +1284,7 @@ int _tmain(int argc, TCHAR *argv[])
             case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
             case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
             case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
+            case OPT_AUXDIR:	    ExecuteOptionAuxDirectory(args.OptionArg());              break;
             case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
             case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
             case OPT_GSVIEW:        ExecuteOptionGsview(_T(""));                        break;
@@ -1395,7 +1422,6 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     texfullpath = fullpath;
     texdir = tstring(drive) + dir;
     texbasename = mainfile;
-    auxbackupname = texbasename+_T(".aux.bak");
 
     // set console title
     SetTitle(_T("Initialization"));
@@ -1621,9 +1647,19 @@ DWORD fullcompile()
             latex_pre = latex_post = _T("");
         }
 
+        tstring auxopt = _T("");
+        if( auxdir != _T("") ) {
+            auxopt = _T(" -aux-directory=")+auxdir;
+            LPCTSTR auxdirpath = GetAuxDirPath();
+            if(!FileExists(auxdirpath))
+                CreateDirectory(auxdirpath, NULL);
+        }
+
         EnterCriticalSection( &cs );
         tstring cmdline = tstring(_T("pdftex"))
-            + texoptions + _T(" -ini \"&") + texinifile + _T("\"")
+            + texoptions + auxopt
+            + _T(" -job-name=") + preamble_format_basename +
+            + _T(" -ini \"&") + texinifile + _T("\"")
             + _T(" \"")
                 + latex_pre
                 + _T("\\input ") + preamble_filename 
@@ -1637,6 +1673,7 @@ DWORD fullcompile()
         if( ret )
             return ret;
         // add the ini format file as a suffix to the generated format file
+        /*
         if( !MoveFileEx( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filename.c_str(), MOVEFILE_REPLACE_EXISTING) ) {
             DWORD err = GetLastError();
             EnterCriticalSection( &cs );
@@ -1644,6 +1681,7 @@ DWORD fullcompile()
             LeaveCriticalSection( &cs ); 
             return err;
         }
+        */
     }
 
     return compile();
@@ -1726,14 +1764,22 @@ DWORD compile()
         latex_pre = latex_post = _T(""); // no special code to run before or after the main .tex file
     }
 
+    tstring auxopt = _T("");
+    if( auxdir != _T("") ) {
+        auxopt = _T(" -aux-directory=")+auxdir;
+        LPCTSTR auxdirpath = GetAuxDirPath();
+        if(!FileExists(auxdirpath))
+            CreateDirectory(auxdirpath, NULL);
+    }
+
 
     ///////
     // Create the command line adding some latex code before and after the .tex file if necessary
     tstring cmdline;
     if( latex_pre == _T("") && latex_post == _T("") ) 
-        cmdline = texengine + texoptions +  _T(" ") + texbasename + _T(".tex");
+        cmdline = texengine + auxopt + texoptions +  _T(" ") + texbasename + _T(".tex");
     else
-        cmdline = texengine +
+        cmdline = texengine + auxopt +
             texoptions + 
             ( formatfile!=_T("") ? _T(" \"&")+formatfile+_T("\"") : _T("") ) +
             _T(" \"") + latex_pre
@@ -2028,7 +2074,10 @@ int bibtex()
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Bibtexing " << texbasename << "tex...\n";
-    tstring cmdline = tstring(_T("bibtex "))+texbasename;
+    tstring cmdline = tstring(_T("bibtex "));
+    if( auxdir != _T("") )
+        cmdline += auxdir+_T("\\");
+    cmdline += texbasename;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
     return launch_and_wait(cmdline.c_str());
