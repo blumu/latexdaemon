@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("35")
+#define BUILD			_T("36")
 
 
 // See changelog.html for the list of changes:.
@@ -435,25 +435,46 @@ int CompareDeps(const vector<CFilename> &pv1, const vector<CFilename> &pv2)
     return bfound ? 0 : 1;
 }
 
+
+// Add the second set of dependencies to the first one.
+void AddDeps(vector<CFilename> &target, vector<CFilename> &add)
+{
+    for(vector<CFilename>::const_iterator it = add.begin(); it!=add.end(); it++) {
+        if( find( target.begin(), target.end(), *it ) == target.end() )
+            target.push_back(*it);
+    }
+
+}
+
 // Refresh the list of automatic dependencies
-void RefreshDependencies(bool bPreamble) {
+// - if bPreamble = true then refresh the preamble dependencies as well.
+// - if bReplace = true then the automatic are recomputed completely and replaced,
+// otherwise they are recomputed and added to the ones that were computed previously.
+void RefreshDependencies(bool bPreamble, bool bReplace) {
     bool depChanged = false;
 
     vector<CFilename> new_deps;
     ReadDependencies(texbasename+_T(".dep"), new_deps);
+    if(!bReplace)
+        AddDeps(new_deps, auto_deps);
     // Compare new_deps and auto_deps
     depChanged = 0 != CompareDeps(new_deps,auto_deps);
     
     vector<CFilename> new_preamb_deps;
     if( bPreamble ) {
         ReadDependencies(texbasename+_T("-preamble.dep"), new_preamb_deps);
+        if(!bReplace)
+            AddDeps(new_preamb_deps, auto_preamb_deps);
         depChanged |= 0!=CompareDeps(new_preamb_deps, auto_preamb_deps);
     }
 
-    // If the dependencies have changed then restart the watching thread
+    // restart the watching thread if the dependencies have changed
     if( depChanged ) {
         auto_deps = new_deps;
-        if( bPreamble ) auto_preamb_deps = new_preamb_deps;
+
+        if (bPreamble)
+            auto_preamb_deps = new_preamb_deps;
+
         if(Watch) 
             SetEvent(hEvtDependenciesChanged);
     }
@@ -752,9 +773,9 @@ void WINAPI MakeThread( void *param )
     // restore the prompt    
     print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING );
 
-    if( errcode == 0 && Autodep ) 
+    if( Autodep ) 
         // Refresh the list of dependencies
-        RefreshDependencies(p->makejob == FullCompile);
+        RefreshDependencies(p->makejob == FullCompile, errcode == 0); // add deps if there were error in the compilation, repalce them if there were no error during compilation
 
     free(p);
 }
