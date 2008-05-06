@@ -458,7 +458,7 @@ void AddDeps(vector<CFilename> &target, vector<CFilename> &add)
 // Return the path to the auxiliary files directory
 tstring GetAuxDirPath()
 {
-    return texdir+_T("\\")+auxdir;
+    return texdir+auxdir;
 }
 
 // return the path to the dependency file for the preamble
@@ -795,7 +795,7 @@ void WINAPI MakeThread( void *param )
     MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
 
     // name of the backup file for the .aux file
-    tstring auxfilepath = GetAuxDirPath()+texbasename+_T(".aux");
+    tstring auxfilepath = GetAuxDirPath()+_T("\\")+texbasename+_T(".aux");
     tstring auxbackupfilepath = auxfilepath+_T(".bak");
 
     if( p->makejob == Compile ) {
