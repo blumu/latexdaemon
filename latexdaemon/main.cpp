@@ -795,7 +795,7 @@ void WINAPI MakeThread( void *param )
     MAKETHREADPARAM *p = (MAKETHREADPARAM *)param;
 
     // name of the backup file for the .aux file
-    tstring auxfilepath = tstring(GetAuxDirPath())+texbasename+_T(".aux");
+    tstring auxfilepath = GetAuxDirPath()+texbasename+_T(".aux");
     tstring auxbackupfilepath = auxfilepath+_T(".bak");
 
     if( p->makejob == Compile ) {
@@ -1669,9 +1669,9 @@ DWORD fullcompile()
         tstring auxopt = _T("");
         if( auxdir != _T("") ) {
             auxopt = _T(" -aux-directory=")+auxdir;
-            LPCTSTR auxdirpath = GetAuxDirPath().c_str();
-            if(!FileExists(auxdirpath))
-                CreateDirectory(auxdirpath, NULL);
+            tstring auxdirpath = GetAuxDirPath();
+            if(!FileExists(auxdirpath.c_str()))
+                CreateDirectory(auxdirpath.c_str(), NULL);
         }
 
         EnterCriticalSection( &cs );
@@ -1786,9 +1786,9 @@ DWORD compile()
     tstring auxopt = _T("");
     if( auxdir != _T("") ) {
         auxopt = _T(" -aux-directory=")+auxdir;
-        LPCTSTR auxdirpath = GetAuxDirPath().c_str();
-        if(!FileExists(auxdirpath))
-            CreateDirectory(auxdirpath, NULL);
+        tstring auxdirpath = GetAuxDirPath();
+        if(!FileExists(auxdirpath.c_str()))
+            CreateDirectory(auxdirpath.c_str(), NULL);
     }
 
 
