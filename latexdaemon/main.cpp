@@ -805,7 +805,7 @@ void WINAPI MakeThread( void *param )
 
     DWORD errcode = make(p->makejob);
 
-    // If the compilation had errors then    
+    // If the compilation was aborted then    
     if( p->makejob == Compile && errcode == -1) 
         // restore the backup copy of the .aux file.
         CopyFile(auxbackupfilepath.c_str(), auxfilepath.c_str(), FALSE);
