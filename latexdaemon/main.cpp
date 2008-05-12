@@ -3,8 +3,9 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("36")
+#define BUILD			_T("37")
 
+//#define TEXHOOK_ORIGINALMETHOD  1
 
 // See changelog.html for the list of changes:.
 
@@ -1644,22 +1645,22 @@ DWORD fullcompile()
 
                 // create a backup of the original \input command
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi")
+                _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
                                                                                          
                 // same for \include
-                _T(" \\ifx\\TEXDAEMON@@include\\@undefined\\let\\TEXDAEMON@@include\\include\\fi")
+                _T(" \\ifx\\DAEMON@@include\\@undefined\\let\\DAEMON@@include\\include\\fi")
 
                 // Hook \input (when it is used with the curly bracket {..})
-                _T(" \\def\\input{\\@ifnextchar\\bgroup\\Dump@input\\TEXDAEMON@@input}")
-                _T(" \\def\\Dump@input#1{ \\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@input #1}")
+                _T(" \\def\\input{\\@ifnextchar\\bgroup\\Dump@input\\DAEMON@@input}")
+                _T(" \\def\\Dump@input#1{ \\immediate\\write\\preambledepfile{#1}\\DAEMON@@input #1}")
 
-                _T(" \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\TEXDAEMON@@include #1}")
+                _T(" \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\DAEMON@@include #1}")
                 _T(" \\catcode`\\@=\\TheAtCode\\relax");
 
             latex_post = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
                          _T(" \\immediate\\closeout\\preambledepfile")     // Close the dependency file
-                         _T(" \\let\\input\\TEXDAEMON@@input")             // Restore the original \input
-                         _T(" \\let\\include\\TEXDAEMON@@include");        //    and \include commands.
+                         _T(" \\let\\input\\DAEMON@@input")             // Restore the original \input
+                         _T(" \\let\\include\\DAEMON@@include");        //    and \include commands.
                          _T(" \\catcode`\\@=\\TheAtCode\\relax");
         }
         else {
@@ -1734,44 +1735,73 @@ DWORD compile()
             _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
                 // Create the .dep file
                 _T(" \\newwrite\\dependfile")
-                _T(" \\openout\\dependfile = ") +texbasename + _T(".dep")
+                _T(" \\immediate\\openout\\dependfile = ") +texbasename + _T(".dep")
+#ifdef TEXHOOK_ORIGINALMETHOD
+/// Original TeX file inclusion hooking method
 
                 // Create a backup of the original \include command
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\TEXDAEMON@ORG@include\\@undefined\\let\\TEXDAEMON@ORG@include\\include\\fi") 
+                _T(" \\ifx\\DAEMON@ORG@include\\@undefined\\let\\DAEMON@ORG@include\\include\\fi") 
 
                 // same for input
-                _T(" \\ifx\\TEXDAEMON@ORG@input\\@undefined\\let\\TEXDAEMON@ORG@input\\input\\fi")
+                _T(" \\ifx\\DAEMON@ORG@input\\@undefined\\let\\DAEMON@ORG@input\\input\\fi")
 
                 // Install a hook for the \include command
-                _T(" \\def\\include#1{\\write\\dependfile{#1}\\TEXDAEMON@ORG@include{#1}}")
+                _T(" \\def\\include#1{\\write\\dependfile{#1}\\DAEMON@ORG@include{#1}}")
 
                 // A hook that write the name of the included file to the dependency file
-                _T(" \\def\\TEXDAEMON@DumpDep@input#1{ \\write\\dependfile{#1}\\TEXDAEMON@ORG@input #1}")
+                _T(" \\def\\DAEMON@DumpDep@input#1{ \\write\\dependfile{#1}\\DAEMON@ORG@input #1}")
 
                 // A hook that does nothing the first time it's being called
                 // (the first call to \input{...} corresponds to the inclusion of the preamble)
                 // and then behave like the preceeding hook
-                _T(" \\def\\TEXDAEMON@HookIgnoreFirst@input#1{ \\let\\input\\TEXDAEMON@DumpDep@input }")
+                _T(" \\def\\DAEMON@HookIgnoreFirst@input#1{ \\let\\input\\DAEMON@DumpDep@input }")
 
                 // Install a hook for the \input command.
                 + (ExternalPreamblePresent
-                    ?  _T(" \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@HookIgnoreFirst@input\\TEXDAEMON@ORG@input}")
-                    :  _T(" \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@DumpDep@input\\TEXDAEMON@ORG@input}"))
-            
+                    ?  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@HookIgnoreFirst@input\\DAEMON@ORG@input}")
+                    :  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@DumpDep@input\\DAEMON@ORG@input}"))
+#else
+/// This new way of hooking TeX file inclusion is compatible with the pdfsync package. With the previous method,
+/// the included file were not recorded in the generated .pdfsync file.
+
+                // Create a backup of the original \InputIfFileExists command
+                // (the \ifx test avoids to create a loop in case another hooking has already been set)
+                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+
+                + (ExternalPreamblePresent
+                    ?   // A hook that does nothing the first time it's being called
+                        // (the first call to \input{...} corresponds to the inclusion of the preamble)
+                        // and then behave like the next hook
+                        _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
+                    :   // A hook that write the name of the included file to the dependency file
+                        _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
+                    )
+
+                // Install the hook for the \InputIfFileExists command.
+                + _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
+#endif
             // restore the @ original catcode
             + _T(" \\catcode`\\@=\\TheAtCode\\relax");
 
-        latex_post = _T(" \\closeout\\dependfile");
+        latex_post = _T(" \\immediate\\closeout\\dependfile");
 
     }
     else if( ExternalPreamblePresent ) {
-        // creation of the dependency file is not required...
+        // automatic detection of the dependencies is deactivated...
         // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
         latex_pre = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
-                        _T(" \\ifx\\TEXDAEMON@@input\\@undefined\\let\\TEXDAEMON@@input\\input\\fi")
-                        _T(" \\def\\input{\\@ifnextchar\\bgroup\\TEXDAEMON@input\\TEXDAEMON@@input}")
-                        _T(" \\def\\TEXDAEMON@input#1{\\let\\input\\TEXDAEMON@@input }")
+#ifdef TEXHOOK_ORIGINALMETHOD
+                _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
+                _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@input\\DAEMON@@input}")
+                _T(" \\def\\DAEMON@input#1{\\let\\input\\DAEMON@@input }")
+#else
+                // Create a backup of the original \InputIfFileExists command
+                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+                // A hook that does nothing the first time it's being called and then behaves normally
+                _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
+                _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
+#endif
                     _T(" \\catcode`\\@=\\TheAtCode\\relax");
         latex_post = _T("");
 
