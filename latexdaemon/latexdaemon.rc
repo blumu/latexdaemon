@@ -80,12 +80,12 @@ BEGIN
         BLOCK "080904b0"
         BEGIN
             VALUE "CompanyName", "William Blum"
-            VALUE "FileDescription", "latexdae Application"
+            VALUE "FileDescription", "LatexDaemon"
             VALUE "FileVersion", "0,9"
             VALUE "InternalName", "latexdae"
             VALUE "LegalCopyright", "Copyright (C) 2008"
-            VALUE "OriginalFilename", "latexdae.exe"
-            VALUE "ProductName", "latexdae Application"
+            VALUE "OriginalFilename", "LatexDaemon.exe"
+            VALUE "ProductName", "LatexDaemon"
             VALUE "ProductVersion", "0,9"
         END
     END
