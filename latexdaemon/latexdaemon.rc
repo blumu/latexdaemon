@@ -56,6 +56,45 @@ END
 // remains consistent on all systems.
 IDI_APP                 ICON                    "latexdaemon.ico"
 IDI_PDFDAEMON           ICON                    "pdfdaemon.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x17L
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080904b0"
+        BEGIN
+            VALUE "CompanyName", "William Blum"
+            VALUE "FileDescription", "latexdae Application"
+            VALUE "FileVersion", "0,9"
+            VALUE "InternalName", "latexdae"
+            VALUE "LegalCopyright", "Copyright (C) 2008"
+            VALUE "OriginalFilename", "latexdae.exe"
+            VALUE "ProductName", "latexdae Application"
+            VALUE "ProductVersion", "0,9"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x809, 1200
+    END
+END
+
 #endif    // English (U.K.) resources
 /////////////////////////////////////////////////////////////////////////////
 

@@ -207,6 +207,10 @@
 				RelativePath=".\resource.h"
 				>
 			</File>
+			<File
+				RelativePath=".\resource1.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Resource Files"
@@ -218,11 +222,19 @@
 				>
 			</File>
 			<File
+				RelativePath=".\latexdaemon.ico"
+				>
+			</File>
+			<File
 				RelativePath=".\latexdaemon.rc"
 				>
 			</File>
 			<File
 				RelativePath=".\latexdameon.ico"
+				>
+			</File>
+			<File
+				RelativePath=".\pdfdaemon.ico"
 				>
 			</File>
 		</Filter>

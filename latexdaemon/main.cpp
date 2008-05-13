@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("38")
+#define BUILD			_T("39")
 
 //#define TEXHOOK_ORIGINALMETHOD  1
 
