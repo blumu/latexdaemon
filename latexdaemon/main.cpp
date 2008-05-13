@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("37")
+#define BUILD			_T("38")
 
 //#define TEXHOOK_ORIGINALMETHOD  1
 
@@ -1692,16 +1692,6 @@ DWORD fullcompile()
         DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
         if( ret )
             return ret;
-        // add the ini format file as a suffix to the generated format file
-        /*
-        if( !MoveFileEx( (texdir+preamble_basename+_T(".fmt")).c_str(), preamble_format_filepath.c_str(), MOVEFILE_REPLACE_EXISTING) ) {
-            DWORD err = GetLastError();
-            EnterCriticalSection( &cs );
-            tcout << fgErr << "Cannot rename format file (MoveFileEx failed with error code "<< err << ")\n" << fgNormal;
-            LeaveCriticalSection( &cs ); 
-            return err;
-        }
-        */
     }
 
     return compile();
@@ -1844,7 +1834,23 @@ DWORD compile()
     tcout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
 
-    return launch_and_wait(cmdline.c_str(), Filter);
+    DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
+    if( !ret && auxdir != _T("") ) {
+        tstring auxdirpath = GetAuxDirPath();
+        // if a .pdfsync file has been generated 
+        tstring syncfile = auxdirpath+_T("\\")+texbasename+_T(".pdfsync");
+        if( FileExists(syncfile.c_str()) ) {
+          // then move it in the same folder as the .pdf file
+          if( !MoveFileEx( syncfile.c_str(), (texdir+_T("\\")+texbasename+_T(".pdfsync")).c_str(), MOVEFILE_REPLACE_EXISTING) ) {
+              DWORD err = GetLastError();
+              EnterCriticalSection( &cs );
+              tcout << fgErr << "Cannot move .pdfsync file file (MoveFileEx failed with error code "<< err << ")\n" << fgNormal;
+              LeaveCriticalSection( &cs ); 
+              return err;
+          }
+        }
+    }
+    return ret;
 }
 
 

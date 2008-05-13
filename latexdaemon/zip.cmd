@@ -4,6 +4,7 @@ rem if not exist temp mkdir temp
 mkdir temp\bin
 copy "%VSCRT%\*" temp\bin\
 copy Release\latexdaemon.exe temp\bin
+copy custom.cmd temp\bin
 mkdir temp\src
 copy *.html temp\src
 copy *.cpp temp\src
@@ -14,6 +15,7 @@ copy *.cmd temp\src
 copy *.txt  temp\src
 del latexdaemon.zip 
 pushd temp
+del ..\latexdaemon.zip
 7za -tzip -r a ..\latexdaemon.zip .
 popd
 del /q /s temp\
