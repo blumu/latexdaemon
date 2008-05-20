@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("39")
+#define BUILD			_T("40")
 
 //#define TEXHOOK_ORIGINALMETHOD  1
 
@@ -36,6 +36,7 @@
 #include <direct.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <process.h>
 #include "md5.h"
 #include "console.h"
 #include "SimpleOpt.h"
@@ -84,9 +85,9 @@ enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, DviPs
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt=Raw);
 void RestartWatchingThread();
-void WINAPI CommandPromptThread( void *param );
-void WINAPI WatchingThread( void *param );
-void WINAPI MakeThread( void *param );
+unsigned __stdcall CommandPromptThread( void *param ); // main thread
+unsigned __stdcall WatchingThread( void *param );
+unsigned __stdcall MakeThread( void *param );
 
 BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam);
 
@@ -192,8 +193,11 @@ tstring auxdir = _T("TeXAux");
 tstring output_ext = _T(".dvi");
 
 
-// Default command line arguments for Tex
+// Default command line arguments for TeX
 tstring texoptions = _T(" -interaction=nonstopmode --src-specials "); // -max-print-line=120 
+
+// Default command line arguments for pdfTeX
+tstring pdftexoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120 
 
 // custom command line
 tstring customcmd = _T("");
@@ -789,7 +793,7 @@ DWORD make(JOB makejob)
 }
 
 // thread responsible of launching the external commands (latex) for compilation
-void WINAPI MakeThread( void *param )
+unsigned __stdcall MakeThread( void *param )
 {
     //////////////
     // perform the necessary compilations
@@ -798,18 +802,25 @@ void WINAPI MakeThread( void *param )
     // name of the backup file for the .aux file
     tstring auxfilepath = GetAuxDirPath()+_T("\\")+texbasename+_T(".aux");
     tstring auxbackupfilepath = auxfilepath+_T(".bak");
+    tstring outfilepath = GetAuxDirPath()+_T("\\")+texbasename+_T(".out");
+    tstring outbackupfilepath = outfilepath+_T(".bak");
 
     if( p->makejob == Compile ) {
-        // Make a copy of the .aux file (in case the latex compilation aborts and destroy the .aux file)
+        // Make a copy of the .aux and .out files
+        // (in case they become corrupted due to an aborted latex compilation)
         CopyFile(auxfilepath.c_str(), auxbackupfilepath.c_str(), FALSE);
+        CopyFile(outfilepath.c_str(), outbackupfilepath.c_str(), FALSE);
     }
 
     DWORD errcode = make(p->makejob);
 
     // If the compilation was aborted then    
-    if( p->makejob == Compile && errcode == -1) 
+    if( p->makejob == Compile && errcode == -1) {
         // restore the backup copy of the .aux file.
         CopyFile(auxbackupfilepath.c_str(), auxfilepath.c_str(), FALSE);
+        // restore the backup copy of the .out file.
+        CopyFile(outbackupfilepath.c_str(), outfilepath.c_str(), FALSE);
+    }
     
     // restore the prompt    
     print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING );
@@ -819,6 +830,9 @@ void WINAPI MakeThread( void *param )
         RefreshDependencies(p->makejob == FullCompile, errcode == 0); // add deps if there were error in the compilation, repalce them if there were no error during compilation
 
     free(p);
+
+    _endthreadex(0);
+    return 0;
 }
 
 
@@ -831,17 +845,13 @@ void RestartWatchingThread(){
 
     SetTitle(_T("monitoring"));
 
-    DWORD watchingthreadID;
+    unsigned watchingthreadID;
 
     // reset the hEvtStopWatching event so that it can be set if
     // some thread requires the watching thread to stop
     ResetEvent(hEvtStopWatching);
 
-    hWatchingThread = CreateThread( NULL, 0,
-        (LPTHREAD_START_ROUTINE) WatchingThread,
-        0,
-        0,
-        &watchingthreadID);
+    hWatchingThread = (HANDLE)_beginthreadex( NULL, 0, &WatchingThread, NULL, 0, &watchingthreadID );
 }
 
 BOOL CALLBACK FindConsoleEnumWndProc(HWND hwnd, LPARAM lparam)
@@ -912,7 +922,7 @@ HWND GetConsoleHWND(void)
 
 
 // thread responsible for parsing the commands send by the user.
-void WINAPI CommandPromptThread( void *param )
+unsigned __stdcall CommandPromptThread( void *param )
 {
     //////////////
     // perform the necessary compilations
@@ -1205,6 +1215,7 @@ err_load:
     CloseHandle(hWatchingThread);
     hWatchingThread = NULL;
 
+    return 0;
 }
 
 typedef BOOL (WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
@@ -1677,7 +1688,8 @@ DWORD fullcompile()
 
         EnterCriticalSection( &cs );
         tstring cmdline = tstring(_T("pdftex"))
-            + texoptions + auxopt
+            + auxopt
+            + (texinifile.compare(_T("pdflatex"))==0 ? pdftexoptions : texoptions)
             + _T(" -job-name=") + preamble_format_basename +
             + _T(" -ini \"&") + texinifile + _T("\"")
             + _T(" \"")
@@ -1814,17 +1826,17 @@ DWORD compile()
 
     ///////
     // Create the command line adding some latex code before and after the .tex file if necessary
-    tstring cmdline;
+    tstring cmdline = texengine
+                        + auxopt
+                        + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions);
     if( latex_pre == _T("") && latex_post == _T("") ) 
-        cmdline = texengine + auxopt + texoptions +  _T(" ") + texbasename + _T(".tex");
+        cmdline += _T(" ") + texbasename + _T(".tex");
     else
-        cmdline = texengine + auxopt +
-            texoptions + 
-            ( formatfile!=_T("") ? _T(" \"&")+formatfile+_T("\"") : _T("") ) +
-            _T(" \"") + latex_pre
-                  + _T(" \\input ")+texbasename+_T(".tex ")
-                  + latex_post
-            + _T("\"");
+        cmdline += ( formatfile!=_T("") ? _T(" \"&")+formatfile+_T("\"") : _T("") ) +
+                    _T(" \"") + latex_pre
+                        + _T(" \\input ")+texbasename+_T(".tex ")
+                        + latex_post
+                    + _T("\"");
 
     // External preamble used? Then compile using the precompiled preamble.
 
@@ -1834,8 +1846,17 @@ DWORD compile()
     tcout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
 
+    // Launch the latex compilation 
     DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
-    if( !ret && auxdir != _T("") ) {
+
+    // if the compilation was aborted (because some source file has changed in the meantime) 
+    // then do not do any postprocessing
+    if (ret==-1)
+        return -1;
+
+
+    // If auxiliary files where stored in a subdirectory then retrieve the pdfsync file
+    if( auxdir != _T("") ) {
         tstring auxdirpath = GetAuxDirPath();
         // if a .pdfsync file has been generated 
         tstring syncfile = auxdirpath+_T("\\")+texbasename+_T(".pdfsync");
@@ -2175,19 +2196,14 @@ bool RestartMakeThread( JOB makejob ) {
     ResetEvent(hEvtAbortMake);
 
     // Create a new "make" thread.
-    //  note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
+    //  Note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
     //  otherwise, if we pass the address of a locally defined variable as a parameter to 
-    //  CreateThread, the content of the structure may change
+    //  _beginthreadex, the content of the structure may change
     //  by the time the make texbasenamethread is created (since the current thread runs concurrently).
     MAKETHREADPARAM *p = new MAKETHREADPARAM;
     p->makejob = makejob;
-    DWORD makethreadID;
-    hMakeThread = CreateThread( NULL,
-	        0,
-	        (LPTHREAD_START_ROUTINE) MakeThread,
-	        (LPVOID)p,
-	        0,
-	        &makethreadID);
+    unsigned makethreadID;
+    hMakeThread = (HANDLE)_beginthreadex( NULL, 0, &MakeThread, (LPVOID)p, 0, &makethreadID);
 
     return hMakeThread!= NULL;
 }
@@ -2237,10 +2253,11 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
 }
 
 // Thread responsible of watching the directory and launching compilation when a change is detected
-void WINAPI WatchingThread( void *param )
+unsigned __stdcall WatchingThread( void* param )
 {
     if( static_deps.size() == 0 ) { // if no file to watch then leave
-        return;
+        _endthreadex( 1 );
+        return 1;
     }
 
     EnterCriticalSection(&cs);
@@ -2298,7 +2315,8 @@ void WINAPI WatchingThread( void *param )
                         print_if_possible(fgErr, _T("The preamble file ") + preamble_filename + _T(" cannot be found or opened!\n") );
                         delete dg_deps;
                         delete dg_preamb_deps;
-                        return;
+                        _endthreadex( 2 ); // abort the thread
+                        return 2;
                     }
                     else
                         print_if_possible(fgIgnoredfile, _T("Preamble dependency detected but cannot be opened: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
@@ -2480,5 +2498,8 @@ void WINAPI WatchingThread( void *param )
         delete dg_deps;
         delete dg_preamb_deps;
     }
+    
+    _endthreadex( 0 );
+    return 0;
 }
 

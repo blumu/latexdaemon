@@ -11,6 +11,7 @@
 #include <tchar.h>
 #include <crtdbg.h>
 #include <iostream>
+#include <process.h>
 #include "Redir.h"
 #include "tstring.h"
 
@@ -134,12 +135,8 @@ BOOL CRedirector::Open(LPTSTR pszCmdLine)
 
         // Launch a thread to receive output from the child process.
         m_hEvtStop = ::CreateEvent(NULL, TRUE, FALSE, NULL);
-        m_hThread = ::CreateThread(
-            NULL, 0,
-            OutputThread,
-            this,
-            0,
-            &m_dwThreadId);
+
+        m_hThread = (HANDLE)_beginthreadex( NULL, 0, &OutputThread, this, 0, &m_dwThreadId );
         if (!m_hThread)
             __leave;
 
@@ -169,16 +166,13 @@ BOOL CRedirector::Open(LPTSTR pszCmdLine)
 
 void CRedirector::Close()
 {
-	if (m_hThread != NULL)
-	{
+	if (m_hThread != NULL) {
 		// this function might be called from redir thread
-		if (::GetCurrentThreadId() != m_dwThreadId)
-		{
+		if (::GetCurrentThreadId() != m_dwThreadId) {
 			_ASSERT(m_hEvtStop != NULL);
 			::SetEvent(m_hEvtStop);
 			//::WaitForSingleObject(m_hThread, INFINITE);
-			if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT)
-			{
+			if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT) {
 				tcerr << _T("[CONSOLE REDIRECTION] The redir thread is dead\r\n");
 				::TerminateThread(m_hThread, -2);
 			}
@@ -297,8 +291,7 @@ int CRedirector::RedirectStdout()
 {
     char szOutput[BUFF_SIZE];
     _ASSERT(m_hStdoutRead != NULL);
-    for (;;)
-    {
+    for (;;) {
         DWORD dwAvail = 0;
         if (!::PeekNamedPipe(m_hStdoutRead, NULL, 0, NULL,
             &dwAvail, NULL))			// error
@@ -333,8 +326,7 @@ int CRedirector::RedirectStdout()
 
 void CRedirector::DestroyHandle(HANDLE& rhObject)
 {
-    if (rhObject != NULL)
-    {
+    if (rhObject != NULL) {
         ::CloseHandle(rhObject);
         rhObject = NULL;
     }
@@ -342,43 +334,43 @@ void CRedirector::DestroyHandle(HANDLE& rhObject)
 
 
 // thread to receive output of the child process
-DWORD WINAPI CRedirector::OutputThread(LPVOID lpvThreadParam)
+unsigned __stdcall CRedirector::OutputThread(void *pvThreadParam)
 {
 	HANDLE aHandles[2];
 	int nRet;
-	CRedirector* pRedir = (CRedirector*) lpvThreadParam;
+	CRedirector* pRedir = (CRedirector*) pvThreadParam;
 
 	_ASSERT(pRedir != NULL);
 	aHandles[0] = pRedir->m_hChildProcess;
 	aHandles[1] = pRedir->m_hEvtStop;
 
-    EnterCriticalSection(pRedir->m_pcs);
-	for (;;)
-	{
-		// redirect stdout till there's no more data.
-		nRet = pRedir->RedirectStdout();
-		if (nRet <= 0)
-			break;
+  EnterCriticalSection(pRedir->m_pcs);
+	    for (;;) {
+		    // redirect stdout till there's no more data.
+		    nRet = pRedir->RedirectStdout();
+		    if (nRet <= 0)
+			    break;
 
-		// check if the child process has terminated.
-		DWORD dwRc = ::WaitForMultipleObjects(
-			2, aHandles, FALSE, pRedir->m_dwWaitTime);
-		if (WAIT_OBJECT_0 == dwRc)		// the child process ended
-		{
-			nRet = pRedir->RedirectStdout();
-			if (nRet > 0)
-				nRet = 0;
-			break;
-		}
-		if (WAIT_OBJECT_0+1 == dwRc)	// m_hEvtStop was signalled
-		{
-			nRet = 1;	// cancelled
-			break;
-		}
-	}
-    LeaveCriticalSection(pRedir->m_pcs);
+		    // check if the child process has terminated.
+		    DWORD dwRc = ::WaitForMultipleObjects(
+			    2, aHandles, FALSE, pRedir->m_dwWaitTime);
+		    if (WAIT_OBJECT_0 == dwRc)		// the child process ended
+		    {
+			    nRet = pRedir->RedirectStdout();
+			    if (nRet > 0)
+				    nRet = 0;
+			    break;
+		    }
+		    if (WAIT_OBJECT_0+1 == dwRc)	// m_hEvtStop was signalled
+		    {
+			    nRet = 1;	// cancelled
+			    break;
+		    }
+	    }
+  LeaveCriticalSection(pRedir->m_pcs);
 
 	// close handles
 	//pRedir->Close(); // Commented out by WB (it causes problems)
+  _endthreadex( nRet );
 	return nRet;
 }
