@@ -337,6 +337,11 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 ////////////////////
 
 
+// Test if the file 'filename' exists
+bool FileExists( LPCTSTR filename ) {
+    struct _stat buffer ;
+    return 0 == _tstat( filename, &buffer );
+}
 
 
 // show the usage of this program
@@ -388,7 +393,7 @@ void ShowUsage(TCHAR *progname) {
 void SetTitle(tstring state)
 {
     if( texfullpath != _T("") )
-        SetConsoleTitle((state + _T(" - ")+ texinifile + _T("Daemon - ") + texfullpath).c_str());
+        SetConsoleTitle((state + _T(" - ")+ texbasename + _T(".tex - ") + texinifile + _T("Daemon")).c_str());
     else
         SetConsoleTitle((state + _T(" - ") + texinifile + _T("Daemon")).c_str());
 }
@@ -814,12 +819,12 @@ unsigned __stdcall MakeThread( void *param )
 
     DWORD errcode = make(p->makejob);
 
-    // If the compilation was aborted then    
-    if( p->makejob == Compile && errcode == -1) {
+    // If the compilation was aborted or no aux file was created then restore the backup copies
+    if( p->makejob == Compile && (errcode == -1 || !FileExists(auxfilepath.c_str()))) {
         // restore the backup copy of the .aux file.
         CopyFile(auxbackupfilepath.c_str(), auxfilepath.c_str(), FALSE);
         // restore the backup copy of the .out file.
-        CopyFile(outbackupfilepath.c_str(), outfilepath.c_str(), FALSE);
+        CopyFile(outbackupfilepath.c_str(), outfilepath.c_str(), FALSE);    
     }
     
     // restore the prompt    
@@ -1357,12 +1362,6 @@ exit:
     return ret;
 }
 
-
-// Test if the file 'filename' exists
-bool FileExists( LPCTSTR filename ) {
-    struct _stat buffer ;
-    return 0 == _tstat( filename, &buffer );
-}
 
 // print the current directory and document
 void pwd()
