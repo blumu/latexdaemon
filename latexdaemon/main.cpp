@@ -1736,7 +1736,7 @@ DWORD compile()
             _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
                 // Create the .dep file
                 _T(" \\newwrite\\dependfile")
-                _T(" \\immediate\\openout\\dependfile = ") +texbasename + _T(".dep")
+                _T(" \\immediate\\openout\\dependfile = \\\"") +texbasename + _T(".dep\\\"")
 #ifdef TEXHOOK_ORIGINALMETHOD
 /// Original TeX file inclusion hooking method
 
@@ -1829,11 +1829,11 @@ DWORD compile()
                         + auxopt
                         + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions);
     if( latex_pre == _T("") && latex_post == _T("") ) 
-        cmdline += _T(" ") + texbasename + _T(".tex");
+        cmdline += _T(" \"") + texbasename + _T(".tex\"");
     else
         cmdline += ( formatfile!=_T("") ? _T(" \"&")+formatfile+_T("\"") : _T("") ) +
                     _T(" \"") + latex_pre
-                        + _T(" \\input ")+texbasename+_T(".tex ")
+                        + _T(" \\input \\\"")+texbasename+_T(".tex\\\" ")
                         + latex_post
                     + _T("\"");
 
