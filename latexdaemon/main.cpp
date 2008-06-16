@@ -2496,7 +2496,7 @@ unsigned __stdcall WatchingThread( void* param )
                 #endif
                 CFilename modifiedfile(watchdirs[iTriggeredDir]->szPath, pFilename);
                 if( IsDirectory(modifiedfile.c_str()) )
-                    continue;
+                    goto next_entry;
 
                 if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
         					print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" touched\n") );
@@ -2550,7 +2550,7 @@ unsigned __stdcall WatchingThread( void* param )
                             print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" modified\n") );
                     }
                 }
-
+next_entry:
                 // step to the next entry if there is one
                 if( pFileNotify->NextEntryOffset )
                     pFileNotify = (FILE_NOTIFY_INFORMATION*) ((PBYTE)pFileNotify + pFileNotify->NextEntryOffset) ;
