@@ -3,7 +3,7 @@
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
 #define VERSION			0.9
-#define BUILD			_T("40")
+#define BUILD			_T("41")
 
 //#define TEXHOOK_ORIGINALMETHOD  1
 
@@ -79,6 +79,12 @@ using namespace std;
 enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, DviPsPdf = 5, Custom = 6 } ;
 
 
+// constants corresponding to the different preamble locations
+enum PREAMBLETYPE { None, /// no preamble
+                    Internal, // internal preamble
+                    External  // external preamble .pre file
+                  } ;
+
 
 //////////
 /// Prototypes
@@ -120,11 +126,11 @@ int openfolder();
 // critical section for handling printf across the different threads
 CRITICAL_SECTION cs;
 
-// set to true by default, can be overwritten by a command line switch
-bool LookForExternalPreamble = true;
+// Do we precompile the preamble? =true by default, can be overwritten by the command line switch --preamble
+bool PreamblePrecompilation = true;
 
-// is there an external preamble file for the currently openend .tex file?
-bool ExternalPreamblePresent = true;
+// how do we find the preamble of the TeX document?
+PREAMBLETYPE PreambleType = External; // external .pre file by default
 
 // watch for file changes ?
 bool Watch = true;
@@ -152,6 +158,10 @@ HANDLE hEvtStopWatching = NULL;
 
 // Fire this event to notify the wathing thread that the dependencies have changed
 HANDLE hEvtDependenciesChanged = NULL;
+
+// is there a make thread currently compiling the preamble?
+bool recompilingPreamble = false;
+
 
 // Reg key where to find the path to gswin32
 #define REGKEY_GSVIEW32_PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
@@ -344,11 +354,23 @@ bool FileExists( LPCTSTR filename ) {
 }
 
 
+// Return true if the path is a directory, false if it doesn't exist or is not a directory
+bool IsDirectory(PCTSTR path)
+{
+   struct _stat buffer;
+
+   _ASSERT(path != NULL);
+   _ASSERT(path[0]);
+
+   return _tstat(path, &buffer) == 0 && (buffer.st_mode &_S_IFDIR);
+}
+
+
+
 // show the usage of this program
 void ShowUsage(TCHAR *progname) {
     tcout << "USAGE: latexdameon [options] mainfile.tex [dependencies]" <<endl
-         << "where" << endl
-         << "* options can be:" << endl
+         << "List of options:" << endl
          << " --help" << endl 
          << "   Show this help message." <<endl<<endl
          << " --aux-directory=DIR" << endl 
@@ -374,13 +396,12 @@ void ShowUsage(TCHAR *progname) {
          << " --custom=\"COMMAND LINE\"" << endl 
          << "   Specifies a command line to execute when afterjob is set to the value 'custom'." << endl 
          << " --filter={highlight|raw|err|warn|err+warn}" << endl 
-         << "   . Set the latex output filter mode. Default: highlight" <<endl <<endl
-         << " --preamble={none|external}" << endl 
-         << "   . 'none' specifies that the main .tex file does not use an external preamble file."<<endl
-         << "   The current version is not capable of extracting the preamble from the .tex file, therefore if this switch is used, the precompilation feature will be automatically deactivated."<<endl
-         << "   . 'external' (default) specifies that the preamble is stored in an external file. The daemon first look for a preamble file called mainfile.pre, if this does not exist it tries preamble.tex and eventually, if neither exists, falls back to the 'none' option."<<endl
-         << endl << "   If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must set the 'none' option to avoid the precompilation of a wrong preamble." <<endl<<endl
-         << "* dependencies contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
+         << "   Set the latex output filter mode. Default: highlight" <<endl <<endl
+         << " --preamble={yes|no}" << endl 
+         << "   Activate/deactivate precompilation of the preamble."<<endl
+         << "   The daemon look for a preamble in that order: 1. a file called mainfile.pre, 2. a file called preamble.tex 3. a preamble delimited by \begin{document} extracted from the main .tex file. If none are present then it falls back to the 'no' option."<<endl
+         << "   Note: If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option to avoid the precompilation of a wrong preamble." <<endl<<endl
+         << "The 'dependencies' parameters contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
          << "INSTRUCTIONS:" << endl
          << "Suppose main.tex is the main file of your Latex document." << endl
          << "  1. Move the preamble from main.tex to a new file named mainfile.pre" << endl 
@@ -563,30 +584,36 @@ bool PreambleFormatFileUptodate()
 {
     ///////////////////
     // If an external preamble file is used then check if the preamble dependencies have been touched since last compilation
-    if( ExternalPreamblePresent ) {
-        ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
-        tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
+    if( PreambleType != None ) {
 
-        // compare the timestamp of the preamble file with the format file
-        int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filepath.c_str());
+        if( PreambleType == External ) {
+            ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
+            tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
 
-        // If the format file is older than the preamble file
-        if( res == SRC_FRESHER ) {
-            // then it is necessary to recreate the format file and to perform a full recompilation
-            return false;
-            tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+            // compare the timestamp of the preamble file with the format file
+            int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filepath.c_str());
+
+            // If the format file is older than the preamble file
+            if( res == SRC_FRESHER ) {
+                // then it is necessary to recreate the format file and to perform a full recompilation
+                return false;
+                tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+            }
+            // if the format file does not exist
+            else if ( res & ERR_OUTABSENT ) {
+                return false;
+                tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
+            }
         }
-        // if the format file does not exist
-        else if ( res & ERR_OUTABSENT ) {
-            return false;
-            tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
+        else if ( PreambleType == Internal ) {
+            // TODO: read the checksum of the intenal preamble from a file to be generated by the dameon upon recompilation of the preamble
         }
 
 
-        // Check if some preamble dependency has been tooched
+        // Check if some preamble dependency has been touched
         for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
             it!= auto_preamb_deps.end(); it++) {
-            res = compare_timestamp(it->c_str(), preamble_format_filepath.c_str());
+            int res = compare_timestamp(it->c_str(), preamble_format_filepath.c_str());
 
             if( res == SRC_FRESHER ) {
                 tcout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
@@ -621,11 +648,11 @@ void ExecuteOptionIni( tstring optionarg )
 void ExecuteOptionPreamble( tstring optionarg )
 {
     EnterCriticalSection( &cs );
-    LookForExternalPreamble = (optionarg==_T("none")) ? false : true ;
-    if( LookForExternalPreamble )
-        tcout << fgNormal << "-I will look for an external preamble file next time I load a .tex file." << endl;
+    PreamblePrecompilation = (optionarg==_T("yes")) ? true : false ;
+    if( PreamblePrecompilation )
+        tcout << fgNormal << "-Preamble precompilation activated (requires a file reload)" << endl;
     else
-        tcout << fgNormal << "-I will not look for an external preamble next time I load a .tex file." << endl;
+        tcout << fgNormal << "-Preamble precompilation deactivated (requires a file reload)" << endl;
     LeaveCriticalSection( &cs );
 }
 
@@ -1029,7 +1056,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                  << "Options can be configured using the following commands:" << endl
                  << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
                  << "          job to be executed after latex compilation" << endl
-                 << "  autodep={yes|no}          automatic dependency detection" << endl
+                 << "  autodep={yes|no}   automatic dependency detection" << endl
                  << "  aux-directory=DIR" << endl
                  << "          Use DIR as the directory to write auxiliary files to."<<endl
                  << "  custom=\"COMMAND LINE\"" << endl
@@ -1038,9 +1065,9 @@ unsigned __stdcall CommandPromptThread( void *param )
                  << "          error messages filter mode (highlight by default)." << endl
                  << "  gsview={yes|no}" << endl
                  << "          view PS/PDF with GSView and send auto-refresh notifications" << endl
-                 << "  ini=inifile               initial format file (default to latex)" << endl
-                 << "  preamble={none|external}  preamble mode (reload file to apply)" << endl
-                 << "  watch={yes|no}            activation of the file modification watching" << endl  << endl;
+                 << "  ini=inifile        initial format file (default to latex)" << endl
+                 << "  preamble={yes|no}  preamble precompilation (requires a file reload)" << endl
+                 << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
@@ -1244,6 +1271,24 @@ BOOL IsWow64()
     return bIsWow64;
 }
 
+// handler for the CTRL+BREAK shortcut
+BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
+{
+    /// abort the current "make" thread if it is already started
+    if( hMakeThread ) {
+        SetEvent(hEvtAbortMake);
+        // wait for the "make" thread to end
+        WaitForSingleObject(hMakeThread, INFINITE);
+        CloseHandle(hMakeThread);
+        hMakeThread = NULL;
+        return true;
+    }
+    /// otherwise executes the default handler
+    else
+        return false;
+}
+
+
 int _tmain(int argc, TCHAR *argv[])
 {
 
@@ -1345,6 +1390,7 @@ int _tmain(int argc, TCHAR *argv[])
         ret = loadfile(nglob, initialjob);
     }
 
+    SetConsoleCtrlHandler(CtrlBreakHandlerRoutine, TRUE);
     if( Watch ) { // If watching has been requested by the user
         // if some correct file was given as a command line parameter 
         if( ret == 0 )
@@ -1425,6 +1471,12 @@ bool spawn(int argc, PTSTR *argv)
     return bret;
 }
 
+// TODO: try to extract the internal preamble from the main .tex file
+bool FindInternalPreamble()
+{
+    return false;
+}
+
 
 
 // Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
@@ -1485,24 +1537,33 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     // change current directory
     _tchdir(texdir.c_str());
 
-    // check for the presence of the external preamble file
-    if( LookForExternalPreamble ) {
+    // is preamble-precompilation activated?
+    if( PreamblePrecompilation ) {
+        // Check for the presence of the external preamble file.
+        
         // compare the timestamp of the preamble.tex file and the format file
         preamble_filename = tstring(mainfile) + _T(".") DEFAULTPREAMBLE1_EXT;
         preamble_basename = tstring(mainfile);
-        ExternalPreamblePresent = FileExists(preamble_filename.c_str());
-        if ( !ExternalPreamblePresent ) {
+        if( FileExists(preamble_filename.c_str()) ) {
+            PreambleType = External;
+        }
+        else {
             // try with the second default preamble name
             preamble_filename = DEFAULTPREAMBLE2_FILENAME;
             preamble_basename = DEFAULTPREAMBLE2_BASENAME;
-            ExternalPreamblePresent = FileExists(preamble_filename.c_str());
-            if ( !ExternalPreamblePresent ) {
-	            tcout << fgWarning << "Warning: Preamble file not found! (I have looked for " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << ")\nPrecompilation mode deactivated!\n";
+            if ( FileExists(preamble_filename.c_str()) ) {
+                PreambleType = External;
+            }
+            else if( FindInternalPreamble() )
+                  PreambleType = Internal;
+            else {
+                  PreambleType = None;
+                  tcout << fgWarning << "Warning: Preamble not found! (I have looked for a file " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << " and for an internal preamble delimited by \begin{document})\nPrecompilation mode deactivated!\n";
             }
         }
     }
     else
-        ExternalPreamblePresent = false;
+        PreambleType = None;
 
 
     ////////////////////////////////
@@ -1644,8 +1705,10 @@ DWORD fullcompile()
     if( !CheckFileLoaded() )
         return 0;
 
-    // Check that external preamble exists
-    if( ExternalPreamblePresent ) {
+    // Is there an external preamble file?
+    if( PreambleType == External ) {
+        recompilingPreamble = true;
+
         tstring latex_pre, latex_post;
         if( Autodep ) {
             latex_pre =
@@ -1701,8 +1764,12 @@ DWORD fullcompile()
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
         DWORD ret = launch_and_wait(cmdline.c_str(), Filter);
+        recompilingPreamble = false;
         if( ret )
             return ret;
+    }
+    else if( PreambleType == Internal ) {
+        // TODO: extract and compile the internal preamble
     }
 
     return compile();
@@ -1721,7 +1788,9 @@ DWORD compile()
     tstring latex_pre,  // the latex code that will be executed before and after the main .tex file
             latex_post; 
 
-    if( ExternalPreamblePresent ) {
+    // precompiled preamble?
+    if( PreambleType != None ) {
+        // the used the precompiled preamble format file
         texengine = _T("pdftex");        
         formatfile = preamble_format_basename;
     }
@@ -1759,7 +1828,7 @@ DWORD compile()
                 _T(" \\def\\DAEMON@HookIgnoreFirst@input#1{ \\let\\input\\DAEMON@DumpDep@input }")
 
                 // Install a hook for the \input command.
-                + (ExternalPreamblePresent
+                + ((PreambleType == External)
                     ?  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@HookIgnoreFirst@input\\DAEMON@ORG@input}")
                     :  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@DumpDep@input\\DAEMON@ORG@input}"))
 #else
@@ -1770,13 +1839,16 @@ DWORD compile()
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
                 _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
 
-                + (ExternalPreamblePresent
-                    ?   // A hook that does nothing the first time it's being called
+                + ((PreambleType == External)
+                    ?   // A hook for \input that does nothing the first time it's being called
                         // (the first call to \input{...} corresponds to the inclusion of the preamble)
-                        // and then behave like the next hook
+                        // and then behaves like a normal \input but which additionally writes the name of the included file to the dependency list
                         _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
-                    :   // A hook that write the name of the included file to the dependency file
-                        _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
+                    :  (PreambleType == Internal)
+                        // TODO: add a hook for the \begin{document} command to skip the preamble of the tex document
+                        ? _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
+                        // A \hook for \input that writes the name of the included file to the dependency file
+                        : _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
                     )
 
                 // Install the hook for the \InputIfFileExists command.
@@ -1788,10 +1860,11 @@ DWORD compile()
         latex_post = _T(" \\immediate\\closeout\\dependfile");
 
     }
-    else if( ExternalPreamblePresent ) {
+    else {
         // automatic detection of the dependencies is deactivated...
-        // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
-        latex_pre = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
+        if( PreambleType == External ) {
+            // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
+            latex_pre = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
 #ifdef TEXHOOK_ORIGINALMETHOD
                 _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
                 _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@input\\DAEMON@@input}")
@@ -1803,15 +1876,19 @@ DWORD compile()
                 _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
                 _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
 #endif
-                    _T(" \\catcode`\\@=\\TheAtCode\\relax");
-        latex_post = _T("");
+                _T(" \\catcode`\\@=\\TheAtCode\\relax");
+            latex_post = _T("");
+        }
 
-    }
+        else if( PreambleType == Internal ) {
+            // TODO: hook the \begin{document} command to skip the preamble
+        }
 
-    // There is no precompiled preamble and dependency calculation is not required therefore
-    // we compile the latex file normally without loading any format file.
-    else {
-        latex_pre = latex_post = _T(""); // no special code to run before or after the main .tex file
+        // There is no precompiled preamble and dependency calculation is deactivated therefore
+        // we can compile the latex file normally without loading any format file.
+        else {
+            latex_pre = latex_post = _T(""); // no special code to run before or after the main .tex file
+        }
     }
 
     tstring auxopt = _T("");
@@ -1836,9 +1913,6 @@ DWORD compile()
                         + _T(" \\input \\\"")+texbasename+_T(".tex\\\" ")
                         + latex_post
                     + _T("\"");
-
-    // External preamble used? Then compile using the precompiled preamble.
-
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
@@ -2295,7 +2369,7 @@ unsigned __stdcall WatchingThread( void* param )
         ///// Dependencies of the preamble file
         vector<CFilename> preamb_deps;
         md5 *dg_preamb_deps = NULL;
-        if( ExternalPreamblePresent ) {
+        if( PreambleType != None ) {
             preamb_deps.push_back(CFilename(sCurrDir,preamble_filename));
             // load the depencies automatically generated by the last compilation of the preamble
             if( Autodep )
@@ -2421,9 +2495,11 @@ unsigned __stdcall WatchingThread( void* param )
                     pFilename = oemfilename;
                 #endif
                 CFilename modifiedfile(watchdirs[iTriggeredDir]->szPath, pFilename);
+                if( IsDirectory(modifiedfile.c_str()) )
+                    continue;
 
                 if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
-					print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" touched\n") );
+        					print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" touched\n") );
                 }
                 else {
                     md5 dg_new;
@@ -2452,7 +2528,7 @@ unsigned __stdcall WatchingThread( void* param )
                             else
 	                            print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" modified but digest preserved\n") );
                         }
-                        else if ( ExternalPreamblePresent ) {
+                        else if ( PreambleType != None ) {
                             // is it a dependency of the preamble?
                             vector<CFilename>::iterator it = find(preamb_deps.begin(),preamb_deps.end(), modifiedfile);
                             if(it != preamb_deps.end() ) {
@@ -2482,7 +2558,11 @@ unsigned __stdcall WatchingThread( void* param )
                     pFileNotify = NULL;
             }
 
-            RestartMakeThread(makejob);
+            // if a make thread is currently recompiling the preamble then and if the preamble has not changed
+            // then we do not have to restart the make thread since it will perform a normal compilation after compiling the preamble anyway
+            if (!recompilingPreamble || makejob == FullCompile)
+                RestartMakeThread(makejob);
+
         }
 
 // cleaning
