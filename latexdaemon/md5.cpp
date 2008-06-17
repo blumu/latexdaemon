@@ -184,8 +184,9 @@ char* MD5File(char* szFilename)
 
 
 // MD5File: computes the digest from the content of a file.
+// only the first ccbSize bytes will be used to compute the digest, if ccbSize=-1 then the whole file is read
 // Return true if no error occurs
-bool md5::DigestFile(PCTSTR szFilename)
+bool md5::DigestFile(PCTSTR szFilename, uint4 ccbSize)
 {
 	unsigned char chBuffer[1024];
 
@@ -202,6 +203,7 @@ bool md5::DigestFile(PCTSTR szFilename)
 			FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_SEQUENTIAL_SCAN,
 			NULL);
 
+
 		if(hFile == INVALID_HANDLE_VALUE) {
 			//dwErrorCode = GetLastError();
 			//std::cout << JadedHoboConsole::fg_red << "can't open file " << szFilename << ", error " << GetLastError() << "\n";
@@ -209,15 +211,22 @@ bool md5::DigestFile(PCTSTR szFilename)
 		}
 		else
 		{
+      DWORD remaining;
+      if (ccbSize==-1)
+        remaining = GetFileSize(hFile, NULL);
+      else
+        remaining = ccbSize;
+
 			Init();
 
 			DWORD dwBytesRead;
-			BOOL bSuccess = ReadFile(hFile, chBuffer, sizeof(chBuffer), &dwBytesRead, NULL);
-			while(bSuccess && dwBytesRead)
+			BOOL bSuccess;
+			do
 			{
+				bSuccess = ReadFile(hFile, chBuffer, min(remaining, sizeof(chBuffer)), &dwBytesRead, NULL);
 				Update(chBuffer, dwBytesRead);
-				bSuccess = ReadFile(hFile, chBuffer, sizeof(chBuffer), &dwBytesRead, NULL);
-			}
+        remaining -= dwBytesRead;
+			} while (bSuccess && remaining>0);
 
 			//while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
 

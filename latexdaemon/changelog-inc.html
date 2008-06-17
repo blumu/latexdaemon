@@ -1,9 +1,10 @@
-<p class="date"> ? June 2008 - Version 0.9 Build 41 </p>
+<p class="date"> 17 June 2008 - Version 0.10 Build 41 </p>
 <ul>
-<li>New: compilation can now be interrupted with CTRL+BREAK with killing latexdaemon.</li>
+<li>New: It is not required anymore to move the preamble to a separate file. The preamble can now be extracted automatically from the main .tex file. (This features uses TeX code from the 'mylatex' package.)</li>
+<li>New: a compilation can now be interrupted with CTRL+BREAK without killing latexdaemon.</li>
 <li>Bug fixed: whenever a non-preamble tex source file is modified, if the preamble is currently being recompiled then the compilation is no longer interrupted.</li>
 <li>Change: accepted values for the --preamble switch are now 'yes' or 'no'.</li>
-<li>Change: stop reporting changes for subdirectories.</li>
+<li>Change: stop reporting file modificatations for subdirectories.</li>
 </ul>
 
 <p class="date"> 8 June 2008 - Version 0.9 Build 40 </p>

@@ -2,7 +2,7 @@
 // Created in September 2006
 #define APP_NAME		_T("LatexDaemon")
 #define VERSION_DATE	__DATE__
-#define VERSION			0.9
+#define VERSION			0.10
 #define BUILD			_T("41")
 
 //#define TEXHOOK_ORIGINALMETHOD  1
@@ -17,6 +17,7 @@
 // - Console color header file (Console.h) from: http://www.codeproject.com/cpp/AddColorConsole.asp
 // - Function CommandLineToArgvA and CommandLineToArgvW from http://alter.org.ua/en/docs/win/args/
 // - Absolute/Relative path converter module from http://www.codeproject.com/useritems/path_conversion.asp
+// - mylatex latex pacakge for the preamble extraction macros http://www.ctan.org/tex-archive/help/Catalogue/entries/mylatex.html
 //
 ///////////////////
 
@@ -86,6 +87,13 @@ enum PREAMBLETYPE { None, /// no preamble
                   } ;
 
 
+// TeX code that changes the catcode for the symbol @
+//#define  TEX_MAKEATLETTER      _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11 ")
+//#define  TEX_MAKEATOTHER       _T(" \\catcode`\\@=\\TheAtCode\\relax")
+#define  TEX_MAKEATLETTER      _T(" \\makeatletter ")
+#define  TEX_MAKEATOTHER       _T(" \\makeatother ")
+
+
 //////////
 /// Prototypes
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
@@ -123,6 +131,9 @@ int openfolder();
 //////////
 /// Global variables
 
+// program's name
+const TCHAR *progname = NULL;
+
 // critical section for handling printf across the different threads
 CRITICAL_SECTION cs;
 
@@ -131,6 +142,9 @@ bool PreamblePrecompilation = true;
 
 // how do we find the preamble of the TeX document?
 PREAMBLETYPE PreambleType = External; // external .pre file by default
+
+// size of the internal preamble?
+UINT preamble_size = 0;
 
 // watch for file changes ?
 bool Watch = true;
@@ -368,8 +382,8 @@ bool IsDirectory(PCTSTR path)
 
 
 // show the usage of this program
-void ShowUsage(TCHAR *progname) {
-    tcout << "USAGE: latexdameon [options] mainfile.tex [dependencies]" <<endl
+void ShowUsage() {
+    tcout << "USAGE: " << progname << " [options] mainfile.tex [dependencies]" <<endl
          << "List of options:" << endl
          << " --help" << endl 
          << "   Show this help message." <<endl<<endl
@@ -399,15 +413,12 @@ void ShowUsage(TCHAR *progname) {
          << "   Set the latex output filter mode. Default: highlight" <<endl <<endl
          << " --preamble={yes|no}" << endl 
          << "   Activate/deactivate precompilation of the preamble."<<endl
-         << "   The daemon look for a preamble in that order: 1. a file called mainfile.pre, 2. a file called preamble.tex 3. a preamble delimited by \begin{document} extracted from the main .tex file. If none are present then it falls back to the 'no' option."<<endl
-         << "   Note: If the files preamble.tex and mainfile.pre exist but do not correspond to the preamble of your latex document (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option to avoid the precompilation of a wrong preamble." <<endl<<endl
-         << "The 'dependencies' parameters contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'. However, only the dependencies that resides in the same folder as the main tex file will be watched for changes." <<endl<<endl
-         << "INSTRUCTIONS:" << endl
-         << "Suppose main.tex is the main file of your Latex document." << endl
-         << "  1. Move the preamble from main.tex to a new file named mainfile.pre" << endl 
-         << "  2. Insert '\\input{mainfile.pre}' at the beginning of your mainfile.tex file" << endl 
-         << "  3. Start the daemon with the command \"latexdaemon main.tex\" " << 
-            "(if you use pdflatex then add the option \"-ini=pdflatex\")" << endl << endl;
+         << "   The daemon looks for a preamble in that order: 1. a file called mainfile.pre, 2. a file called preamble.tex 3. a preamble delimited by \\begin{document} extracted from the main .tex file. If none are present then it falls back to 'no'."<<endl
+         << "   Note: If the files preamble.tex and mainfile.pre exist but are not the preamble (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option." <<endl<<endl
+         << "The 'dependencies' parameters contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'." <<endl<<endl
+         << "EXAMPLES:" << endl
+         << "  " << progname << " main.tex" << endl
+         << "  " << progname << " -ini=pdflatex main.tex" << endl << endl;
 }
 
 // update the title of the console
@@ -585,28 +596,43 @@ bool PreambleFormatFileUptodate()
     ///////////////////
     // If an external preamble file is used then check if the preamble dependencies have been touched since last compilation
     if( PreambleType != None ) {
+        ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
+
+        // compare the timestamp of the preamble file with the format file
+        int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filepath.c_str());
 
         if( PreambleType == External ) {
-            ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
-            tcout << _T("-Preamble file: ") << preamble_filename << _T("\n");
-
-            // compare the timestamp of the preamble file with the format file
-            int res = compare_timestamp(preamble_filename.c_str(), preamble_format_filepath.c_str());
+            tcout << _T("-Preamble: external (") << preamble_filename << _T(") \n");
 
             // If the format file is older than the preamble file
             if( res == SRC_FRESHER ) {
                 // then it is necessary to recreate the format file and to perform a full recompilation
-                return false;
                 tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+                return false;
             }
             // if the format file does not exist
             else if ( res & ERR_OUTABSENT ) {
-                return false;
                 tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
+                return false;
             }
         }
         else if ( PreambleType == Internal ) {
-            // TODO: read the checksum of the intenal preamble from a file to be generated by the dameon upon recompilation of the preamble
+            tcout << _T("-Preamble: internal\n");
+            
+            // If the format file is older than the preamble file
+            if( res == SRC_FRESHER ) {
+                // TODO: read the last checksum of the intenal preamble from some file to be generated by the dameon upon recompilation of the preamble
+                // and compare it with the current checksum
+                //if( checksum are different ) {
+                   tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+                   return false;
+                // }
+            }
+            // if the format file does not exist
+            else if ( res & ERR_OUTABSENT ) {
+                tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
+                return false;
+            }
         }
 
 
@@ -621,6 +647,9 @@ bool PreambleFormatFileUptodate()
             }
         }
     }
+    else
+        tcout << _T("-Preamble: none\n");
+
     return true;
 }
 
@@ -1023,7 +1052,7 @@ unsigned __stdcall CommandPromptThread( void *param )
         case OPT_USAGE:
             EnterCriticalSection( &cs );
                 tcout << fgNormal;
-                ShowUsage(NULL);
+                ShowUsage();
             LeaveCriticalSection( &cs ); 
             break;
         case OPT_HELP:
@@ -1070,25 +1099,25 @@ unsigned __stdcall CommandPromptThread( void *param )
                  << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
             LeaveCriticalSection( &cs ); 
             break;
-        case OPT_INI:			ExecuteOptionIni(args.OptionArg());              break;
-        case OPT_PREAMBLE:		ExecuteOptionPreamble(args.OptionArg());         break;
-        case OPT_AFTERJOB:		ExecuteOptionAfterJob(args.OptionArg());         break;
-        case OPT_CUSTOM:		ExecuteOptionCustom(args.OptionArg());         break;
-        case OPT_WATCH:			ExecuteOptionWatch(args.OptionArg());            break;
-        case OPT_AUXDIR:	    ExecuteOptionAuxDirectory(args.OptionArg());            break;
-        case OPT_AUTODEP:		ExecuteOptionAutoDependencies(args.OptionArg()); break;
-        case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());     break;
-        case OPT_GSVIEW:        {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
-        case OPT_BIBTEX:		bibtex();		break;
-        case OPT_MAKEINDEX:		makeindex();	break;
-        case OPT_PS2PDF:		ps2pdf();		break;
-        case OPT_EDIT:			edit();			break;
-        case OPT_VIEWOUTPUT:	view();			break;
-        case OPT_VIEWDVI:		view_dvi();		break;
-        case OPT_VIEWPS:		view_ps();		break;
-        case OPT_VIEWPDF:		view_pdf();		break;
-        case OPT_OPENFOLDER:	openfolder();	break;
-        case OPT_PWD:           pwd();          break;
+        case OPT_INI:			   ExecuteOptionIni(args.OptionArg());              break;
+        case OPT_PREAMBLE:	 ExecuteOptionPreamble(args.OptionArg());         break;
+        case OPT_AFTERJOB:	 ExecuteOptionAfterJob(args.OptionArg());         break;
+        case OPT_CUSTOM:		 ExecuteOptionCustom(args.OptionArg());         break;
+        case OPT_WATCH:			 ExecuteOptionWatch(args.OptionArg());            break;
+        case OPT_AUXDIR:	   ExecuteOptionAuxDirectory(args.OptionArg());            break;
+        case OPT_AUTODEP:		 ExecuteOptionAutoDependencies(args.OptionArg()); break;
+        case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
+        case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
+        case OPT_BIBTEX:		 bibtex();		break;
+        case OPT_MAKEINDEX:	 makeindex();	break;
+        case OPT_PS2PDF:		 ps2pdf();		break;
+        case OPT_EDIT:			 edit();			break;
+        case OPT_VIEWOUTPUT: view();			break;
+        case OPT_VIEWDVI:		 view_dvi();		break;
+        case OPT_VIEWPS:		 view_ps();		break;
+        case OPT_VIEWPDF:		 view_pdf();		break;
+        case OPT_OPENFOLDER: openfolder();	break;
+        case OPT_PWD:        pwd();          break;
 
         case OPT_RUN:
             {
@@ -1292,6 +1321,8 @@ BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
 int _tmain(int argc, TCHAR *argv[])
 {
 
+    progname = GetFileBaseNamePart(argv[0]);
+
     SetTitle(_T("prompt"));
 
     tcout << endl << fgNormal << APP_NAME << _T(" ") << VERSION << _T(" Build ") << BUILD << _T(" by William Blum, ") << VERSION_DATE << endl << endl;;
@@ -1361,11 +1392,11 @@ int _tmain(int argc, TCHAR *argv[])
         }
 
         switch( args.OptionId() ) {
-            case OPT_USAGE:         ShowUsage(NULL);                                    goto exit;
+            case OPT_USAGE:         ShowUsage();                                        goto exit;
             case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
             case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
             case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
-            case OPT_AUXDIR:	    ExecuteOptionAuxDirectory(args.OptionArg());              break;
+            case OPT_AUXDIR:	      ExecuteOptionAuxDirectory(args.OptionArg());        break;
             case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
             case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
             case OPT_GSVIEW:        ExecuteOptionGsview(_T(""));                        break;
@@ -1471,9 +1502,34 @@ bool spawn(int argc, PTSTR *argv)
     return bret;
 }
 
-// TODO: try to extract the internal preamble from the main .tex file
-bool FindInternalPreamble()
+// Check if the main .tex file contains a preamble delimited by \begin{document}
+// store the length of the preamble in *preamble_len if preamble_len!=NULL.
+// return true if the preamble exists.
+#define PREAMBLE_DELIMITER  _T("\\begin{document}")
+bool FindInternalPreamble(UINT *preamble_len=NULL)
 {
+    FILE *fp = _tfopen(texfullpath.c_str(), _T("r"));
+    if (!fp)
+        return false;
+    
+    TCHAR buff[_countof(PREAMBLE_DELIMITER)+20]; // we are just looking for a line of the form \begin{document} with possible spaces before
+    PTSTR p;
+    fpos_t linepos;
+    while (!feof(fp) ) {
+        fgetpos(fp, &linepos);
+        _fgetts(buff, _countof(buff), fp);
+        p = buff;
+        while(*p == ' ' || *p == '\t' )
+            p++;
+        p = _tcsstr(p, PREAMBLE_DELIMITER);
+        if(p) {
+            if (preamble_len)
+                *preamble_len = linepos + p-buff + _countof(PREAMBLE_DELIMITER)-1;
+            fclose(fp);
+            return true;
+        }
+    }
+    fclose(fp);
     return false;
 }
 
@@ -1554,11 +1610,14 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
             if ( FileExists(preamble_filename.c_str()) ) {
                 PreambleType = External;
             }
-            else if( FindInternalPreamble() )
-                  PreambleType = Internal;
+            else if( FindInternalPreamble(&preamble_size) ) {
+                PreambleType = Internal;
+                preamble_filename = texbasename + _T(".tex");
+                preamble_basename = texbasename;
+            }
             else {
                   PreambleType = None;
-                  tcout << fgWarning << "Warning: Preamble not found! (I have looked for a file " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << " and for an internal preamble delimited by \begin{document})\nPrecompilation mode deactivated!\n";
+                  tcout << fgWarning << "Warning: Preamble not found! (I have looked for a file " << mainfile << "." << DEFAULTPREAMBLE1_EXT << " and " << DEFAULTPREAMBLE2_FILENAME << " and for an internal preamble delimited by \\begin{document})\nPrecompilation mode deactivated!\n";
             }
         }
     }
@@ -1699,21 +1758,99 @@ DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt)
     return dwRet;
 }
 
+// Return a string containing a TeX macro that hooks the inclusion commands (\input, \include, \includegraphics) to generate the list of dependencies
+// SH specifies the sharp symbol. It can be used to duplicate the sharp symbol when the macro is used inside another TeX macro.
+tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
+    if ( Autodep ) {
+        return
+                // Create the .dep file
+                _T(" \\newwrite\\dependfile")
+                _T(" \\immediate\\openout\\dependfile = \\\"") +texbasename + _T(".dep\\\"")
+#ifdef TEXHOOK_ORIGINALMETHOD
+/// Original TeX file inclusion hooking method
+                // Create a backup of the original \include command
+                // (the \ifx test avoids to create a loop in case another hooking has already been set)
+                _T(" \\ifx\\DAEMON@ORG@include\\@undefined\\let\\DAEMON@ORG@include\\include\\fi") 
+
+                // same for input
+                _T(" \\ifx\\DAEMON@ORG@input\\@undefined\\let\\DAEMON@ORG@input\\input\\fi")
+
+                // Install a hook for the \include command
+                _T(" \\def\\include")+SH+_T("1{\\write\\dependfile{")+SH+_T("1}\\DAEMON@ORG@include{")+SH+_T("1}}")
+
+                // A hook that write the name of the included file to the dependency file
+                _T(" \\def\\DAEMON@DumpDep@input")+SH+_T("1{ \\write\\dependfile{")+SH+_T("1}\\DAEMON@ORG@input ")+SH+_T("1}")
+
+                // A hook that does nothing the first time it's being called
+                // (the first call to \input{...} corresponds to the inclusion of the preamble)
+                // and then behave like the preceeding hook
+                _T(" \\def\\DAEMON@HookIgnoreFirst@input")+SH+_T("1{ \\let\\input\\DAEMON@DumpDep@input }")
+
+                // Install a hook for the \input command.
+                + ((PreambleType == External)
+                    ?  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@HookIgnoreFirst@input\\DAEMON@ORG@input}")
+                    :  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@DumpDep@input\\DAEMON@ORG@input}"))
+#else
+/// This new way of hooking TeX file inclusion is compatible with the pdfsync package. With the previous method,
+/// the included file were not recorded in the generated .pdfsync file.
+
+                // Create a backup of the original \InputIfFileExists command
+                // (the \ifx test avoids to create a loop in case another hooking has already been set)
+                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+
+                + ((PreambleType == External)
+                    ?   // A hook for \input that does nothing the first time it's being called
+                        // (the first call to \input{...} corresponds to the inclusion of the preamble)
+                        // and then behaves like a normal \input but which additionally writes the name of the included file to the dependency list
+                        _T(" \\long\\def\\DAEMON@InputIfFileExists")+SH+_T("1") +SH+ _T("2") +SH+ _T("3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\immediate\\write\\dependfile{") +SH+ _T("1}\\DAEMON@ORG@InputIfFileExists{") +SH+ _T("1}{") +SH+ _T("2}{") +SH+ _T("3}\\fi}")
+                    :  // A \hook for \input that writes the name of the included file to the dependency file
+                       _T(" \\long\\def\\DAEMON@InputIfFileExists") +SH+ _T("1") +SH+ _T("2") +SH+ _T("3{\\immediate\\write\\dependfile{") +SH+ _T("1}\\DAEMON@ORG@InputIfFileExists{") +SH+ _T("1}{") +SH+ _T("2}{") +SH+ _T("3}}")
+                    )
+
+                // Install the hook for the \InputIfFileExists command.
+                + _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
+#endif
+                ;
+
+        // Note: It is not required to close the file with
+        //  \\immediate\\closeout\\dependfile
+        // at the end of the compilation because the file will be closed automatically when the TeX process ends.
+    }
+    else if( PreambleType == External ) {
+        // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
+        return 
+#ifdef TEXHOOK_ORIGINALMETHOD
+            _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
+            _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@input\\DAEMON@@input}")
+            _T(" \\def\\DAEMON@input")+SH+_T("1{\\let\\input\\DAEMON@@input }")
+#else
+            // Create a backup of the original \InputIfFileExists command
+            _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+            // A hook that does nothing the first time it's being called and then behaves normally
+            _T(" \\long\\def\\DAEMON@InputIfFileExists")+SH+_T("1")+SH+_T("2")+SH+_T("3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\DAEMON@ORG@InputIfFileExists{")+SH+_T("1}{")+SH+_T("2}{")+SH+_T("3}\\fi}")
+            _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
+#endif
+            ;
+    }
+    else
+        return _T("");
+}
+
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
 DWORD fullcompile()
 {
     if( !CheckFileLoaded() )
         return 0;
 
-    // Is there an external preamble file?
-    if( PreambleType == External ) {
+    // DO we need to precompile the preamble?
+    if( PreambleType != None ) {
         recompilingPreamble = true;
 
-        tstring latex_pre, latex_post;
+        // tex code for the automatic detection of dependencies
+        tstring autodep_pre, autodep_post;
         if( Autodep ) {
-            latex_pre =
-                _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
-                _T(" \\newwrite\\preambledepfile")
+            autodep_pre =
+                _T("\\newwrite\\preambledepfile")
                 _T("  \\immediate\\openout\\preambledepfile = ") + texbasename + _T("-preamble.dep")
 
                 // create a backup of the original \input command
@@ -1728,17 +1865,89 @@ DWORD fullcompile()
                 _T(" \\def\\Dump@input#1{ \\immediate\\write\\preambledepfile{#1}\\DAEMON@@input #1}")
 
                 _T(" \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\DAEMON@@include #1}")
-                _T(" \\catcode`\\@=\\TheAtCode\\relax");
-
-            latex_post = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
-                         _T(" \\immediate\\closeout\\preambledepfile")     // Close the dependency file
-                         _T(" \\let\\input\\DAEMON@@input")             // Restore the original \input
-                         _T(" \\let\\include\\DAEMON@@include");        //    and \include commands.
-                         _T(" \\catcode`\\@=\\TheAtCode\\relax");
+                ;
+            
+            autodep_post = _T(" \\immediate\\closeout\\preambledepfile")  // Close the dependency file
+                           _T(" \\let\\input\\DAEMON@@input")             // Restore the original \input
+                           _T(" \\let\\include\\DAEMON@@include");        //    and \include commands.
         }
         else {
-            latex_pre = latex_post = _T("");
+            autodep_pre = _T("");
         }
+
+        tstring latex_pre, latex_post;
+
+        if( PreambleType == External ) {
+            // add the code that changes the catcode for the symbol @
+            latex_pre =  ( autodep_pre!=_T("") ) ? TEX_MAKEATLETTER + autodep_pre + TEX_MAKEATOTHER : _T("");
+            latex_post =  ( autodep_post!=_T("") ) ? TEX_MAKEATLETTER + autodep_post + TEX_MAKEATOTHER : _T("") ;
+            latex_post += _T(" \\dump\\endinput") ;
+        }
+        else // if( PreambleType == Internal )
+        {
+            latex_pre = TEX_MAKEATLETTER + autodep_pre + 
+// Save the original definitions.
+_T("\\let\\DAEMONdocument\\document ")
+
+// The version of \document to use on the initex run.
+// Just preloads some fonts, puts back \document and \openout,
+// sets up the banner to display the file list of files preloaded,
+// then sets up some special catcodes so the preamble will be
+// skipped on normal runs with the new format.
+_T("\\def\\document{\\endgroup")
+// Force some font preloading.
+_T(" {\\setbox\\z@\\hbox{")
+_T("  $$") // math (not bold, some setups don't have \boldmath)
+_T("  \\normalfont") // normal
+_T("   {\\ifx\\large\\@undefined\\else\\large\\fi") // large and footnote
+_T("    \\ifx\\footnotesize\\@undefined\\else\\footnotesize\\fi}")
+_T("   {\\bfseries\\itshape}") // bold and bold italic
+_T("   {\\itshape}") // italic
+_T("   \\ttfamily") // monospace
+_T("   \\sffamily") // sans serif
+_T("   }}")
+_T(" \\let\\document\\DAEMONdocument")
+_T(" \\makeatother")
+_T(" \\catcode`\\\\=13\\relax")
+_T(" \\catcode`\\#=12\\relax")
+_T(" \\catcode`\\ =9\\relax")
++ autodep_post 
++ GetInputHookTeXMacro(_T("##")) +
+_T(" \\dump}")
+
+// Templates for ending the `preamble skipping process'.
+_T("\\def\\DAEMONbegin{\\begin{document}}")
+
+// While the preamble is being skipped, the EOL is active
+// and defined to grab each line and inspect it looking
+// for \begin{document} or mylatex lines.
+// The special catcodes required are not enabled until after the
+// first TeX command in the file, so as to avoid problems with
+// the special processing that TeX does on the first line, choosing
+// the format, or the file name etc.
+_T("{\\catcode`\\^^M=\\active")
+_T(" \\catcode`\\/=0 ")
+_T(" /catcode`\\\\=13 ")
+_T(" /gdef\\{/catcode`/\\=0 /catcode`/^^M=13   /catcode`/%=9 ^^M}")
+_T(" /long/gdef^^M#1^^M{")
+_T("  /def/MYline{#1}")
+// If hit \begin{document} put things back as they should be, run the
+// hook with any save \openouts then do the original \document code.
+_T("  /ifx/MYline/DAEMONbegin")
+_T("    /catcode`/^^M=5/relax")
+_T("    /let^^M/par/relax")
+_T("    /catcode`/#=6/relax")
+_T("    /catcode`/%=14/relax")
+_T("    /catcode`/ =10/relax")
+_T("    /expandafter/DAEMONbegin")
+_T("  /else")
+// Otherwise grab the next line to look at.
+_T("    /expandafter^^M")
+_T("/fi}} ");
+
+            latex_post = _T("");
+        }
+
 
         tstring auxopt = _T("");
         if( auxdir != _T("") ) {
@@ -1758,7 +1967,6 @@ DWORD fullcompile()
                 + latex_pre
                 + _T("\\input ") + preamble_filename 
                 + latex_post
-                + _T(" \\dump\\endinput")
             + _T("\"");
         tcout << fgMsg << "-- Creation of the format file...\n";
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
@@ -1767,9 +1975,6 @@ DWORD fullcompile()
         recompilingPreamble = false;
         if( ret )
             return ret;
-    }
-    else if( PreambleType == Internal ) {
-        // TODO: extract and compile the internal preamble
     }
 
     return compile();
@@ -1785,12 +1990,11 @@ DWORD compile()
 
     tstring texengine;  // tex engine to run
     tstring formatfile; // formatfile to preload before reading the main .tex file    
-    tstring latex_pre,  // the latex code that will be executed before and after the main .tex file
-            latex_post; 
+    tstring latex_pre;  // the latex code that will be executed before the main .tex file
 
-    // precompiled preamble?
+    // are we using a precompiled preamble?
     if( PreambleType != None ) {
-        // the used the precompiled preamble format file
+        // load the precompiled preamble format file with the pdftex engine
         texengine = _T("pdftex");        
         formatfile = preamble_format_basename;
     }
@@ -1799,97 +2003,17 @@ DWORD compile()
         formatfile = _T(""); // no format file
     }
 
-    if ( Autodep ) {
-        latex_pre =
-            // change the @ catcode
-            _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
-                // Create the .dep file
-                _T(" \\newwrite\\dependfile")
-                _T(" \\immediate\\openout\\dependfile = \\\"") +texbasename + _T(".dep\\\"")
-#ifdef TEXHOOK_ORIGINALMETHOD
-/// Original TeX file inclusion hooking method
 
-                // Create a backup of the original \include command
-                // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\DAEMON@ORG@include\\@undefined\\let\\DAEMON@ORG@include\\include\\fi") 
+    tstring autodep_pre = GetInputHookTeXMacro();
 
-                // same for input
-                _T(" \\ifx\\DAEMON@ORG@input\\@undefined\\let\\DAEMON@ORG@input\\input\\fi")
-
-                // Install a hook for the \include command
-                _T(" \\def\\include#1{\\write\\dependfile{#1}\\DAEMON@ORG@include{#1}}")
-
-                // A hook that write the name of the included file to the dependency file
-                _T(" \\def\\DAEMON@DumpDep@input#1{ \\write\\dependfile{#1}\\DAEMON@ORG@input #1}")
-
-                // A hook that does nothing the first time it's being called
-                // (the first call to \input{...} corresponds to the inclusion of the preamble)
-                // and then behave like the preceeding hook
-                _T(" \\def\\DAEMON@HookIgnoreFirst@input#1{ \\let\\input\\DAEMON@DumpDep@input }")
-
-                // Install a hook for the \input command.
-                + ((PreambleType == External)
-                    ?  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@HookIgnoreFirst@input\\DAEMON@ORG@input}")
-                    :  _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@DumpDep@input\\DAEMON@ORG@input}"))
-#else
-/// This new way of hooking TeX file inclusion is compatible with the pdfsync package. With the previous method,
-/// the included file were not recorded in the generated .pdfsync file.
-
-                // Create a backup of the original \InputIfFileExists command
-                // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
-
-                + ((PreambleType == External)
-                    ?   // A hook for \input that does nothing the first time it's being called
-                        // (the first call to \input{...} corresponds to the inclusion of the preamble)
-                        // and then behaves like a normal \input but which additionally writes the name of the included file to the dependency list
-                        _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
-                    :  (PreambleType == Internal)
-                        // TODO: add a hook for the \begin{document} command to skip the preamble of the tex document
-                        ? _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
-                        // A \hook for \input that writes the name of the included file to the dependency file
-                        : _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\immediate\\write\\dependfile{#1}\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}}")
-                    )
-
-                // Install the hook for the \InputIfFileExists command.
-                + _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
-#endif
-            // restore the @ original catcode
-            + _T(" \\catcode`\\@=\\TheAtCode\\relax");
-
-        latex_post = _T(" \\immediate\\closeout\\dependfile");
-
+    if( PreambleType == Internal ) {
+        // nothing special to be done (the format file has prepared all the job of skipping the preamble, and setting the hook for dependency detection)
+        latex_pre = _T("");
     }
     else {
-        // automatic detection of the dependencies is deactivated...
-        if( PreambleType == External ) {
-            // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
-            latex_pre = _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11")
-#ifdef TEXHOOK_ORIGINALMETHOD
-                _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
-                _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@input\\DAEMON@@input}")
-                _T(" \\def\\DAEMON@input#1{\\let\\input\\DAEMON@@input }")
-#else
-                // Create a backup of the original \InputIfFileExists command
-                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
-                // A hook that does nothing the first time it's being called and then behaves normally
-                _T(" \\long\\def\\DAEMON@InputIfFileExists#1#2#3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\DAEMON@ORG@InputIfFileExists{#1}{#2}{#3}\\fi}")
-                _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
-#endif
-                _T(" \\catcode`\\@=\\TheAtCode\\relax");
-            latex_post = _T("");
-        }
-
-        else if( PreambleType == Internal ) {
-            // TODO: hook the \begin{document} command to skip the preamble
-        }
-
-        // There is no precompiled preamble and dependency calculation is deactivated therefore
-        // we can compile the latex file normally without loading any format file.
-        else {
-            latex_pre = latex_post = _T(""); // no special code to run before or after the main .tex file
-        }
+        latex_pre =  (autodep_pre != _T("")) ? TEX_MAKEATLETTER + autodep_pre + TEX_MAKEATOTHER : _T("");
     }
+
 
     tstring auxopt = _T("");
     if( auxdir != _T("") ) {
@@ -1905,14 +2029,12 @@ DWORD compile()
     tstring cmdline = texengine
                         + auxopt
                         + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions);
-    if( latex_pre == _T("") && latex_post == _T("") ) 
+    if( formatfile != _T("") )
+        cmdline += _T(" \"&")+formatfile+_T("\"");
+    if( latex_pre == _T("") ) // && latex_post == _T("") ) 
         cmdline += _T(" \"") + texbasename + _T(".tex\"");
     else
-        cmdline += ( formatfile!=_T("") ? _T(" \"&")+formatfile+_T("\"") : _T("") ) +
-                    _T(" \"") + latex_pre
-                        + _T(" \\input \\\"")+texbasename+_T(".tex\\\" ")
-                        + latex_post
-                    + _T("\"");
+        cmdline += _T(" \"") + latex_pre + _T(" \\input \\\"")+texbasename+_T(".tex\\\" \"");
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
@@ -2369,8 +2491,11 @@ unsigned __stdcall WatchingThread( void* param )
         ///// Dependencies of the preamble file
         vector<CFilename> preamb_deps;
         md5 *dg_preamb_deps = NULL;
+        md5 dg_preamble; // digest of the preamble file or the internal preamble
         if( PreambleType != None ) {
-            preamb_deps.push_back(CFilename(sCurrDir,preamble_filename));
+            if( PreambleType == External )
+                preamb_deps.push_back(CFilename(sCurrDir,preamble_filename));
+
             // load the depencies automatically generated by the last compilation of the preamble
             if( Autodep )
                 for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
@@ -2382,9 +2507,8 @@ unsigned __stdcall WatchingThread( void* param )
                 if( dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str()) ) {
                     if(n>0) print_if_possible(fgMsg, _T("Preamble dependency detected: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
                 }
-                else
-                {
-                    if( n == 0  ) {
+                else {
+                    if( PreambleType == External && n == 0  ) {
                         print_if_possible(fgErr, _T("The preamble file ") + preamble_filename + _T(" cannot be found or opened!\n") );
                         delete dg_deps;
                         delete dg_preamb_deps;
@@ -2394,6 +2518,12 @@ unsigned __stdcall WatchingThread( void* param )
                     else
                         print_if_possible(fgIgnoredfile, _T("Preamble dependency detected but cannot be opened: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
                 }
+            }
+            if( PreambleType == External )
+                dg_preamble = dg_preamb_deps[0];
+            else { // Internal
+                if(FindInternalPreamble(&preamble_size))
+                    dg_preamble.DigestFile(CFilename(sCurrDir,preamble_filename), preamble_size);
             }
         }
 
@@ -2520,7 +2650,15 @@ unsigned __stdcall WatchingThread( void* param )
                         vector<CFilename>::iterator it = find(deps.begin(),deps.end(), modifiedfile);
                         if(it != deps.end() ) {
                             size_t i = it - deps.begin();
-                            if ( dg_new.DigestFile(modifiedfile) && (dg_deps[i]!=dg_new) ) {
+                            // if the main tex file has changed and the preamble is internal then check whether the checksum of the preamble has changed
+                            if( i == 0 && PreambleType==Internal && dg_new.DigestFile(modifiedfile, preamble_size) && (dg_preamble!=dg_new)) {
+                                if(FindInternalPreamble(&preamble_size))
+                                    dg_preamble.DigestFile(modifiedfile, preamble_size);
+                                print_if_possible(fgDepFile, tstring(_T("+ The preamble of \"")) + modifiedfile.Relative(texdir) + _T("\" has changed.\n") );
+                                makejob = max(FullCompile, makejob);
+
+                            } 
+                            else if ( dg_new.DigestFile(modifiedfile) && (dg_deps[i]!=dg_new) ) {
 	                            dg_deps[i] = dg_new;
 	                            print_if_possible(fgDepFile, tstring(_T("+ \"")) + modifiedfile.Relative(texdir) + _T("\" changed (dependency file).\n") );
 	                            makejob = max(Compile, makejob);
