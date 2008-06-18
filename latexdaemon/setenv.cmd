@@ -12,4 +12,10 @@ rem "C:\Program Files\Microsoft SDKs\Windows\v6.0\Bin\SetEnv.cmd"
 
 set PROJFILE=latexdaemon.vcproj
 
+set path=c:\cygwin\bin\;%path%
+
+set WEBLOCAL=%USERPROFILE%\documents\website\
+set WEBREMOTE=william@www.famille-blum.org:public_html
+
+
 Title Latexdameon Build Environment

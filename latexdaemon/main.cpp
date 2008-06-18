@@ -1,10 +1,8 @@
 // Copyright William Blum 2007-2008 (http://william.famille-blum.org/software/index.html)
 // Created in September 2006
-#define APP_NAME		_T("LatexDaemon")
-#define VERSION_DATE	__DATE__
-#define VERSION			0.10
-#define BUILD			_T("41")
+#include "version.h"
 
+// Define this flag to make the \input hooking compatible with pure TeX (not only LaTeX)
 //#define TEXHOOK_ORIGINALMETHOD  1
 
 // See changelog.html for the list of changes:.
@@ -1325,7 +1323,7 @@ int _tmain(int argc, TCHAR *argv[])
 
     SetTitle(_T("prompt"));
 
-    tcout << endl << fgNormal << APP_NAME << _T(" ") << VERSION << _T(" Build ") << BUILD << _T(" by William Blum, ") << VERSION_DATE << endl << endl;;
+    tcout << endl << fgNormal << APP_TITLE << _T(" ") << INFO_VERSION_T << _T(" by ") << COMPANY_NAME << _T(", ") << BUILD_DATE << endl << endl;;
 
     // look for gsview
     HKEY hkey;
@@ -1911,12 +1909,16 @@ _T(" \\makeatother")
 _T(" \\catcode`\\\\=13\\relax")
 _T(" \\catcode`\\#=12\\relax")
 _T(" \\catcode`\\ =9\\relax")
-+ autodep_post 
-+ GetInputHookTeXMacro(_T("##")) +
++ autodep_post +
 _T(" \\dump}")
 
 // Templates for ending the `preamble skipping process'.
-_T("\\def\\DAEMONbegin{\\begin{document}}")
+_T("\\def\\MARKbegin{\\begin{document}}")
+
+_T("\\def\\DAEMONbegin{ ")
+   + GetInputHookTeXMacro(_T("##")) +
+_T(" \\begin{document}}")
+
 
 // While the preamble is being skipped, the EOL is active
 // and defined to grab each line and inspect it looking
@@ -1933,7 +1935,7 @@ _T(" /long/gdef^^M#1^^M{")
 _T("  /def/MYline{#1}")
 // If hit \begin{document} put things back as they should be, run the
 // hook with any save \openouts then do the original \document code.
-_T("  /ifx/MYline/DAEMONbegin")
+_T("  /ifx/MYline/MARKbegin")
 _T("    /catcode`/^^M=5/relax")
 _T("    /let^^M/par/relax")
 _T("    /catcode`/#=6/relax")

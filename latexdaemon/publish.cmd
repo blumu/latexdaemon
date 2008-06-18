@@ -1,4 +1,18 @@
-copy latexdaemon.zip %USERPROFILE%\documents\website\software\latexdaemon
-copy changelog-inc.html %USERPROFILE%\documents\website\software\latexdaemon
-pscp %USERPROFILE%\documents\website\software\latexdaemon\* william@www.famille-blum.org:public_html/software/latexdaemon
+@echo off
+:: change to directory containg this batch file
+cd /d %0\..
+
+setlocal
+
+call getver.cmd
+
+echo Publishing LatexDaemon %APP_VERSION_FLAT%
+echo.
+copy %PACKAGE_FILENAME%.zip %WEBLOCAL%\software\latexdaemon\latexdaemon.zip
+copy changelog-inc.html %WEBLOCAL%\software\latexdaemon\
+pscp %WEBLOCAL%\software\latexdaemon\* %WEBREMOTE%/software/latexdaemon
+
+endlocal
+
 pause
+
