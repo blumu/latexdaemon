@@ -1,13 +1,12 @@
 @echo off
+:: change to directory containg this batch file
+cd /d %0\..
 
 setlocal
 call getver.cmd
 
-echo Zipping version %APP_VERSION_FLAT%
+echo Zipping LaTeXDaemon version %APP_VERSION%
 echo.
-
-:: change to directory containg this batch file
-cd /d %0\..
 
 del /q /s temp\
 rem if not exist temp mkdir temp
@@ -26,9 +25,9 @@ copy *.sln temp\src
 copy *.cmd temp\src
 copy *.txt  temp\src
 :zip
-del %PACKAGE_FILENAME%.zip 
+del builds\%PACKAGE_FILENAME%.zip 
 pushd temp
-7za -tzip -r a ../%PACKAGE_FILENAME%.zip .
+7za -tzip -r a ../builds/%PACKAGE_FILENAME%.zip .
 popd
 del /q /s temp\
 rd /q /s temp
