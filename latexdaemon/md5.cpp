@@ -186,61 +186,61 @@ char* MD5File(char* szFilename)
 // MD5File: computes the digest from the content of a file.
 // only the first ccbSize bytes will be used to compute the digest, if ccbSize=-1 then the whole file is read
 // Return true if no error occurs
-bool md5::DigestFile(PCTSTR szFilename, uint4 ccbSize)
+bool md5::DigestFile(PCTSTR szFilename, DWORD ccbSize)
 {
-	unsigned char chBuffer[1024];
+    unsigned char chBuffer[1024];
 
-	try
-	{
-		memset(chBuffer, 0, 1024);
-		
-		// Open the file
-		HANDLE hFile = CreateFile(szFilename,
-			GENERIC_READ,
-			FILE_SHARE_READ,
-			NULL,
-			OPEN_EXISTING,
-			FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_SEQUENTIAL_SCAN,
-			NULL);
+    try
+    {
+        memset(chBuffer, 0, 1024);
+
+        // Open the file
+        HANDLE hFile = CreateFile(szFilename,
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_SEQUENTIAL_SCAN,
+            NULL);
 
 
-		if(hFile == INVALID_HANDLE_VALUE) {
-			//dwErrorCode = GetLastError();
-			//std::cout << JadedHoboConsole::fg_red << "can't open file " << szFilename << ", error " << GetLastError() << "\n";
-			return false;
-		}
-		else
-		{
-      DWORD remaining;
-      if (ccbSize==-1)
-        remaining = GetFileSize(hFile, NULL);
-      else
-        remaining = ccbSize;
+        if(hFile == INVALID_HANDLE_VALUE) {
+            //dwErrorCode = GetLastError();
+            //std::cout << JadedHoboConsole::fg_red << "can't open file " << szFilename << ", error " << GetLastError() << "\n";
+            return false;
+        }
+        else
+        {
+            DWORD remaining;
+            if (ccbSize==-1)
+                remaining = GetFileSize(hFile, NULL);
+            else
+                remaining = ccbSize;
 
-			Init();
+            Init();
 
-			DWORD dwBytesRead;
-			BOOL bSuccess;
-			do
-			{
-				bSuccess = ReadFile(hFile, chBuffer, min(remaining, sizeof(chBuffer)), &dwBytesRead, NULL);
-				Update(chBuffer, dwBytesRead);
-        remaining -= dwBytesRead;
-			} while (bSuccess && remaining>0);
+            DWORD dwBytesRead;
+            BOOL bSuccess;
+            do
+            {
+                bSuccess = ReadFile(hFile, chBuffer, min(remaining, sizeof(chBuffer)), &dwBytesRead, NULL);
+                Update(chBuffer, dwBytesRead);
+                remaining -= dwBytesRead;
+            } while (bSuccess && remaining>0);
 
-			//while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
+            //while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
 
-			Finalize();
+            Finalize();
 
-			if(hFile != NULL) CloseHandle(hFile);
-		}
-	}
-	catch(...)
-	{
-		return false;  // failed
-	}
+            if(hFile != NULL) CloseHandle(hFile);
+        }
+    }
+    catch(...)
+    {
+        return false;  // failed
+    }
 
-	return true;
+    return true;
 }
 
 

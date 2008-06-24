@@ -142,7 +142,7 @@ bool PreamblePrecompilation = true;
 PREAMBLETYPE PreambleType = External; // external .pre file by default
 
 // size of the internal preamble?
-UINT preamble_size = 0;
+DWORD preamble_size = 0;
 
 // watch for file changes ?
 bool Watch = true;
@@ -1504,7 +1504,7 @@ bool spawn(int argc, PTSTR *argv)
 // store the length of the preamble in *preamble_len if preamble_len!=NULL.
 // return true if the preamble exists.
 #define PREAMBLE_DELIMITER  _T("\\begin{document}")
-bool FindInternalPreamble(UINT *preamble_len=NULL)
+bool FindInternalPreamble(DWORD *preamble_len=NULL)
 {
     FILE *fp = _tfopen(texfullpath.c_str(), _T("r"));
     if (!fp)
@@ -1953,7 +1953,7 @@ _T("/fi}} ");
 
         tstring auxopt = _T("");
         if( auxdir != _T("") ) {
-            auxopt = _T(" -aux-directory=")+auxdir;
+            auxopt = _T(" -output-directory=")+auxdir;
             tstring auxdirpath = GetAuxDirPath();
             if(!FileExists(auxdirpath.c_str()))
                 CreateDirectory(auxdirpath.c_str(), NULL);

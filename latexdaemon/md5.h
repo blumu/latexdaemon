@@ -50,7 +50,7 @@ public:
 	void	Update(uchar* chInput, uint4 nInputLen);
 	void	Finalize();
 	uchar*	Digest() { return m_Digest; }
-	bool	DigestFile(PCTSTR szFilename, uint4 ccbSize=-1);
+	bool	DigestFile(PCTSTR szFilename, DWORD ccbSize=-1);
 
 private:
 

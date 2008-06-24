@@ -14,6 +14,5 @@ copy changelog-inc.html %WEBLOCAL%\software\latexdaemon\
 pscp %WEBLOCAL%\software\latexdaemon\* %WEBREMOTE%/software/latexdaemon
 
 endlocal
-
 pause
 
