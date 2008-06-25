@@ -1003,6 +1003,9 @@ unsigned __stdcall CommandPromptThread( void *param )
 #define DUMMYCMD        _T("dummy -")
         TCHAR cmdline[PROMPT_MAX_INPUT_LENGTH+_countof(DUMMYCMD)] = DUMMYCMD; // add a dummy command name and the option delimiter
         tcin.getline(&cmdline[_countof(DUMMYCMD)-1], PROMPT_MAX_INPUT_LENGTH);
+        if( tcin.fail() ){
+            tcin.clear();
+        }
 
         // Convert the command line into an argv table 
         int argc;
@@ -1885,7 +1888,13 @@ DWORD fullcompile()
         {
             latex_pre = TEX_MAKEATLETTER + autodep_pre + 
 // Save the original definitions.
-_T("\\let\\DAEMONdocument\\document ")
+_T("\\let\\ORGdocument\\document ")
+_T("\\let\\ORGopenout\\openout ")
+
+// Version of \document to use on normal run
+_T("\\def\\DAEMONdocument{") 
+    + GetInputHookTeXMacro(_T("##")) 
+    + _T("\\ORGdocument}")
 
 // The version of \document to use on the initex run.
 // Just preloads some fonts, puts back \document and \openout,
@@ -1894,17 +1903,18 @@ _T("\\let\\DAEMONdocument\\document ")
 // skipped on normal runs with the new format.
 _T("\\def\\document{\\endgroup")
 // Force some font preloading.
-_T(" {\\setbox\\z@\\hbox{")
-_T("  $$") // math (not bold, some setups don't have \boldmath)
-_T("  \\normalfont") // normal
-_T("   {\\ifx\\large\\@undefined\\else\\large\\fi") // large and footnote
-_T("    \\ifx\\footnotesize\\@undefined\\else\\footnotesize\\fi}")
-_T("   {\\bfseries\\itshape}") // bold and bold italic
-_T("   {\\itshape}") // italic
-_T("   \\ttfamily") // monospace
-_T("   \\sffamily") // sans serif
-_T("   }}")
-_T(" \\let\\document\\DAEMONdocument")
+ _T(" {\\setbox\\z@\\hbox{")
+  _T(" $$") // math (not bold, some setups don't have \boldmath)
+  _T(" \\normalfont") // normal
+   _T(" {\\ifx\\large\\@undefined\\else\\large\\fi") // large and footnote
+   _T(" \\ifx\\footnotesize\\@undefined\\else\\footnotesize\\fi}")
+   _T(" {\\bfseries\\itshape}") // bold and bold italic
+   _T(" {\\itshape}") // italic
+   _T(" \\ttfamily") // monospace
+   _T(" \\sffamily") // sans serif
+   _T(" }}")
+_T(" \\let\\document\\ORGdocument")
+_T(" \\let\\openout\\ORGopenout")
 _T(" \\makeatother")
 _T(" \\catcode`\\\\=13\\relax")
 _T(" \\catcode`\\#=12\\relax")
@@ -1912,13 +1922,21 @@ _T(" \\catcode`\\ =9\\relax")
 + autodep_post +
 _T(" \\dump}")
 
+// In principle \openout stream= filename need not be space terminated,
+// and need not be immediate, but this covers \makeindex \makeglossary
+// and index package's \newindex which are all the cases of \openout
+// that occur before \begin{document} that I could see.
+// Thanks to Ross Moore for pointing out \AtBeginDocument is too late
+// eg changebar package *closes* the stream in \AtBeginDocument, so need
+// to make sure it is opened before that. Make a special purpose hook.
+_T("\\def\\openout#1 {")
+  _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }}")
+_T("\\let\\DAEMONopens\\@empty")
+
 // Templates for ending the `preamble skipping process'.
 _T("\\def\\MARKbegin{\\begin{document}}")
-
-_T("\\def\\DAEMONbegin{ ")
-   + GetInputHookTeXMacro(_T("##")) +
-_T(" \\begin{document}}")
-
+// mark for a custom 'end of preamble'
+_T("\\def\\MARKeop{ENDOFPREAMBLE}")
 
 // While the preamble is being skipped, the EOL is active
 // and defined to grab each line and inspect it looking
@@ -1928,24 +1946,31 @@ _T(" \\begin{document}}")
 // the special processing that TeX does on the first line, choosing
 // the format, or the file name etc.
 _T("{\\catcode`\\^^M=\\active")
-_T(" \\catcode`\\/=0 ")
-_T(" /catcode`\\\\=13 ")
-_T(" /gdef\\{/catcode`/\\=0 /catcode`/^^M=13   /catcode`/%=9 ^^M}")
-_T(" /long/gdef^^M#1^^M{")
-_T("  /def/MYline{#1}")
+ _T("\\catcode`\\/=0 ")
+ _T("/catcode`\\\\=13 ")
+ _T("/gdef\\{/catcode`/\\=0 /catcode`/^^M=13 /catcode`/%=9 ^^M}")
+ _T("/long/gdef^^M#1^^M{")
+ _T("/def/MYline{#1}")
+// If hit a comment `ENDOFPREAMBLE' then do as if you'd hit \begin{document}
+// except don't run the real \document as a \begin{document} will be
+// coming up later in the file at the end of the preamble.
+ _T("/ifx/MYline/MARKeop")
+   _T("/let/MARKbegin/relax")
+   _T("/let/MYline/relax")
+ _T("/fi")
 // If hit \begin{document} put things back as they should be, run the
 // hook with any save \openouts then do the original \document code.
-_T("  /ifx/MYline/MARKbegin")
-_T("    /catcode`/^^M=5/relax")
-_T("    /let^^M/par/relax")
-_T("    /catcode`/#=6/relax")
-_T("    /catcode`/%=14/relax")
-_T("    /catcode`/ =10/relax")
-_T("    /expandafter/DAEMONbegin")
-_T("  /else")
+ _T("/ifx/MYline/MARKbegin")
+   _T("/catcode`/^^M=5/relax")
+   _T("/let^^M/par/relax")
+   _T("/catcode`/#=6/relax")
+   _T("/catcode`/%=14/relax")
+   _T("/catcode`/ =10/relax")
+   _T("/expandafter/DAEMONopens/expandafter/MARKbegin")
+ _T("/else")
 // Otherwise grab the next line to look at.
-_T("    /expandafter^^M")
-_T("/fi}} ");
+   _T("/expandafter^^M")
+ _T("/fi}} ");
 
             latex_post = _T("");
         }
