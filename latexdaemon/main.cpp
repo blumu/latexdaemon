@@ -51,6 +51,43 @@ using namespace std;
 #include "tstring.h"
 
 
+// A class for process that can be lauched (synchronoulsy) and aborted (by another thread)
+// by singaling a specified win32 event
+
+class AbortableProcessLauncher {
+public:
+    AbortableProcessLauncher(){
+        running = false;
+        // create the event that can be used to abort the process
+        abortevent = CreateEvent(NULL,TRUE,FALSE,NULL);
+        ownhandle = true;
+    }
+    AbortableProcessLauncher(HANDLE customabortevent): abortevent (customabortevent){
+        running = false;
+        ownhandle = false;
+    }
+    ~AbortableProcessLauncher()
+    {
+        if (ownhandle)
+            CloseHandle(abortevent);
+    }
+
+    DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt=Raw);
+    void abort()
+    {
+        SetEvent(abortevent);
+    }
+    const bool isrunning()
+    {
+        return running;
+    }
+private:
+    HANDLE abortevent;
+    bool running;
+    bool ownhandle;
+
+};
+
 //////////
 /// Constants 
 
@@ -60,12 +97,12 @@ using namespace std;
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME _T(".tex")
 #define DEFAULTPREAMBLE1_EXT            _T("pre")
 
-#define PROMPT_STRING					_T("dameon>")
-#define PROMPT_STRING_WATCH				_T("dameon@>")
+#define PROMPT_STRING                   _T("dameon>")
+#define PROMPT_STRING_WATCH             _T("dameon@>")
 
 
 // Maximal length of an input command line at the prompt
-#define PROMPT_MAX_INPUT_LENGTH			2*_MAX_PATH
+#define PROMPT_MAX_INPUT_LENGTH         2*_MAX_PATH
 
 
 // result of timestamp comparison
@@ -95,7 +132,6 @@ enum PREAMBLETYPE { None, /// no preamble
 //////////
 /// Prototypes
 int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
-DWORD launch_and_wait(LPCTSTR cmdline, HANDLE hAbort, FILTER filt=Raw);
 void RestartWatchingThread();
 unsigned __stdcall CommandPromptThread( void *param ); // main thread
 unsigned __stdcall WatchingThread( void *param );
@@ -108,16 +144,17 @@ void pwd();
 bool spawn(int argc, PTSTR *argv);
 int loadfile( CSimpleGlob &nglob, JOB initialjob );
 bool RestartMakeThread(JOB makejob);
-DWORD fullcompile(HANDLE hAbort);
-DWORD compile(HANDLE hAbort);
-int dvips(HANDLE hAbort, tstring opt);
-int dvipspdf(HANDLE hAbort, tstring opt);
-int dvipng(HANDLE hAbort, tstring opt);
-int custom(HANDLE hAbort, tstring opt);
-int shell(HANDLE hAbort, tstring cmdline);
-int ps2pdf(HANDLE hAbort);
-int bibtex(HANDLE hAbort);
-int makeindex(HANDLE hAbort, tstring opt);
+DWORD fullcompile(AbortableProcessLauncher &launcher);
+DWORD compile(AbortableProcessLauncher &launcher);
+int dvips(AbortableProcessLauncher &launcher, tstring opt);
+int dvipspdf(AbortableProcessLauncher &launcher, tstring opt);
+int dvipng(AbortableProcessLauncher &launcher, tstring opt);
+int custom(AbortableProcessLauncher &launcher, tstring opt);
+int shell(AbortableProcessLauncher &launcher, tstring cmdline);
+int ps2pdf(AbortableProcessLauncher &launcher);
+int bibtex(AbortableProcessLauncher &launcher);
+int makeindex(AbortableProcessLauncher &launcher, tstring opt);
+DWORD make(AbortableProcessLauncher &launcher, JOB makejob);
 int edit();
 int view();
 int view_dvi();
@@ -162,11 +199,14 @@ HANDLE hMakeThread = NULL;
 // handle of the watching thread
 HANDLE hWatchingThread = NULL;
 
-// Event fired when the make thread needs to be aborted
-HANDLE hEvtAbortMake = NULL;
+// Event fired when the "make" thread needs to be aborted
+HANDLE hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
 
-// Event fired to stop the process launched in the command prompt thread
-HANDLE hEvtAbortCmdPromptProcess = NULL;
+// Process launcher used from the "make" thread
+AbortableProcessLauncher makelauncher(hEvtAbortMake);
+
+// Process launcher used in the main thread
+AbortableProcessLauncher mainlauncher;
 
 // Fire this event to request the watching thread to abort
 HANDLE hEvtStopWatching = NULL;
@@ -361,6 +401,52 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 
 ////////////////////
 
+
+// Launch an external program and wait for its termination or for an abortion
+DWORD AbortableProcessLauncher::launch_and_wait(LPCTSTR cmdline, FILTER filt)
+{
+    this->running = true;
+
+    DWORD dwRet = 0;
+    LPTSTR szCmdline= _tcsdup(cmdline);
+
+    ostreamLatexFilter filtstream(cout.rdbuf(), filt);
+    ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
+    CRedirector redir(pRedirStream , &cs);
+    if( !pRedirStream ) EnterCriticalSection(&cs);
+    if( redir.Open(szCmdline) ) {
+        HANDLE hProc = redir.GetProcessHandle();
+
+        // Wait until child process exits or the make process is aborted.
+        HANDLE hp[2] = {hProc, this->abortevent};
+        switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
+        case WAIT_OBJECT_0:
+            // Get the return code
+            GetExitCodeProcess( hProc, &dwRet);
+            break;
+        case WAIT_OBJECT_0+1:
+            dwRet = -1;
+            TerminateProcess( hProc,1);
+            break;
+        default:
+            break;
+        }
+
+        if(!pRedirStream) LeaveCriticalSection( &cs );
+    }
+    else {
+        if(!pRedirStream) LeaveCriticalSection( &cs );
+        dwRet = GetLastError();
+        EnterCriticalSection( &cs );
+        tcout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
+        LeaveCriticalSection( &cs ); 
+    }
+
+    free(szCmdline);
+    this->running = false;
+    ResetEvent(this->abortevent);
+    return dwRet;
+}
 
 // Test if the file 'filename' exists
 bool FileExists( LPCTSTR filename ) {
@@ -671,7 +757,7 @@ void ExecuteOptionIni( tstring optionarg )
     if( IsFileLoaded() ) {
         SetPreambleFormatName(); // reset the name of the current preamble format file
         if( !PreambleFormatFileUptodate() )
-            fullcompile(hEvtAbortCmdPromptProcess );      // recompile the preamble format file
+            fullcompile(mainlauncher);      // recompile the preamble format file
     }
 }
 // Code executed when the -preamble option is specified
@@ -815,7 +901,7 @@ void ExecuteOptionAutoDependencies( tstring optionarg )
 
 
 // perform the necessary compilation
-DWORD make(HANDLE hAbort, JOB makejob)
+DWORD make(AbortableProcessLauncher &launcher, JOB makejob)
 {
     DWORD ret;
 
@@ -823,21 +909,21 @@ DWORD make(HANDLE hAbort, JOB makejob)
         return 0;
     else if( makejob == Compile ) {
         SetTitle(_T("recompiling..."));
-        ret = compile(hAbort);
+        ret = compile(launcher);
     }
     else if ( makejob == FullCompile ) {
         SetTitle(_T("recompiling..."));
-        ret = fullcompile(hAbort);
+        ret = fullcompile(launcher);
     }
     if( ret==0 ) {
         if( afterjob == Dvips )
-            ret = dvips(hAbort, _T(""));
+            ret = dvips(launcher, _T(""));
         else if ( afterjob == DviPng )
-            ret = dvipng(hAbort, _T(""));
+            ret = dvipng(launcher, _T(""));
         else if ( afterjob == DviPsPdf )
-            ret = dvipspdf(hAbort, _T(""));
+            ret = dvipspdf(launcher, _T(""));
         else if ( afterjob == Custom )
-            ret = custom(hAbort, _T(""));
+            ret = custom(launcher, _T(""));
 
         // has gswin32 been launched?
         if( piGsview.dwProcessId ) {
@@ -874,7 +960,7 @@ unsigned __stdcall MakeThread( void *param )
         CopyFile(outfilepath.c_str(), outbackupfilepath.c_str(), FALSE);
     }
 
-    DWORD errcode = make(hEvtAbortMake, p->makejob);
+    DWORD errcode = make(makelauncher, p->makejob);
 
     // If the compilation was aborted or no aux file was created then restore the backup copies
     if( p->makejob == Compile && (errcode == -1 || !FileExists(auxfilepath.c_str()))) {
@@ -1112,8 +1198,8 @@ unsigned __stdcall CommandPromptThread( void *param )
         case OPT_AUTODEP:    ExecuteOptionAutoDependencies(args.OptionArg()); break;
         case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
         case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
-        case OPT_BIBTEX:     bibtex(hEvtAbortCmdPromptProcess);      break;
-        case OPT_PS2PDF:     ps2pdf(hEvtAbortCmdPromptProcess);      break;
+        case OPT_BIBTEX:     bibtex(mainlauncher);      break;
+        case OPT_PS2PDF:     ps2pdf(mainlauncher);      break;
         case OPT_EDIT:       edit();        break;
         case OPT_VIEWOUTPUT: view();        break;
         case OPT_VIEWDVI:    view_dvi();    break;
@@ -1127,7 +1213,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                 tstring opt;
                 for(int i=2;i<argc;i++)
                     opt+=tstring(argv[i]) + _T(" ");
-                makeindex(hEvtAbortCmdPromptProcess, opt);
+                makeindex(mainlauncher, opt);
             }
             break;
 
@@ -1136,7 +1222,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                 tstring cmd;
                 for(int i=2;i<argc;i++)
                     cmd+=tstring(argv[i]) + _T(" ");
-                shell(hEvtAbortCmdPromptProcess, cmd);
+                shell(mainlauncher, cmd);
             }
             break;
         case OPT_DVIPS:
@@ -1144,7 +1230,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                 tstring opt;
                 for(int i=2;i<argc;i++)
                     opt+=tstring(argv[i]) + _T(" ");
-                dvips(hEvtAbortCmdPromptProcess, opt);
+                dvips(mainlauncher, opt);
             }
             break;
         case OPT_DVIPSPDF:
@@ -1152,7 +1238,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                 tstring opt;
                 for(int i=2;i<argc;i++)
                     opt+=tstring(argv[i]) + _T(" ");
-                dvipspdf(hEvtAbortCmdPromptProcess, opt);
+                dvipspdf(mainlauncher, opt);
             }
             break;
 
@@ -1161,7 +1247,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                 tstring opt;
                 for(int i=2;i<argc;i++)
                     opt+=tstring(argv[i]) + _T(" ");
-                dvipng(hEvtAbortCmdPromptProcess, opt);
+                dvipng(mainlauncher, opt);
             }
             break;
 
@@ -1316,12 +1402,17 @@ BOOL IsWow64()
 BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
 {
     /// abort the current "make" thread if it is already started
-    if( hMakeThread ) {
-        SetEvent(hEvtAbortMake);
-        // wait for the "make" thread to end
-        WaitForSingleObject(hMakeThread, INFINITE);
-        CloseHandle(hMakeThread);
-        hMakeThread = NULL;
+    if( hMakeThread || mainlauncher.isrunning() ) {
+        if( hMakeThread ) {
+            SetEvent(hEvtAbortMake);
+            // wait for the "make" thread to end
+            //WaitForSingleObject(hMakeThread, INFINITE);
+            CloseHandle(hMakeThread);
+            hMakeThread = NULL;
+        }
+        if( mainlauncher.isrunning() )
+            mainlauncher.abort();
+
         return true;
     }
     /// otherwise executes the default handler
@@ -1363,10 +1454,6 @@ int _tmain(int argc, TCHAR *argv[])
             gsview = DEFAULT_GSVIEW32_PATH;
     }
 
-    // create the event used to abort the "make" thread
-    hEvtAbortMake = CreateEvent(NULL,TRUE,FALSE,NULL);
-    // create the event used to abort the process launched in the main thread
-    hEvtAbortCmdPromptProcess = CreateEvent(NULL,TRUE,FALSE,NULL);
     // create the event used to abort the "watching" thread
     hEvtStopWatching = CreateEvent(NULL,TRUE,FALSE,NULL);
     // create the event used to notify the "watching" thread of a dependency changed
@@ -1448,7 +1535,6 @@ int _tmain(int argc, TCHAR *argv[])
 exit:	
     DeleteCriticalSection(&cs);
     CloseHandle(hEvtAbortMake);
-    CloseHandle(hEvtAbortCmdPromptProcess);
     CloseHandle(hEvtStopWatching);
     CloseHandle(hEvtDependenciesChanged);
     return ret;
@@ -1704,7 +1790,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
         if( job == FullCompile )
             tcout << fgMsg << "  Let's recreate the format file and then recompile " << texbasename << ".tex.\n";
 
-        make(hEvtAbortCmdPromptProcess, job);
+        make(mainlauncher, job);
     }
 
     FileLoaded = true;
@@ -1730,48 +1816,6 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile)
 
 
 
-// Launch an external program and wait for its termination or for an abortion
-// hAbort specifies a handle to an event that can be signaled to abort the process
-DWORD launch_and_wait(LPCTSTR cmdline, HANDLE hAbort, FILTER filt)
-{
-    DWORD dwRet = 0;
-    LPTSTR szCmdline= _tcsdup(cmdline);
-
-    ostreamLatexFilter filtstream(cout.rdbuf(), filt);
-    ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
-    CRedirector redir(pRedirStream , &cs);
-    if( !pRedirStream ) EnterCriticalSection(&cs);
-    if( redir.Open(szCmdline) ) {
-        HANDLE hProc = redir.GetProcessHandle();
-
-        // Wait until child process exits or the make process is aborted.
-        HANDLE hp[2] = {hProc, hAbort};
-        switch( WaitForMultipleObjects(2, hp, FALSE, INFINITE ) ) {
-        case WAIT_OBJECT_0:
-            // Get the return code
-            GetExitCodeProcess( hProc, &dwRet);
-            break;
-        case WAIT_OBJECT_0+1:
-            dwRet = -1;
-            TerminateProcess( hProc,1);
-            break;
-        default:
-            break;
-        }
-
-        if(!pRedirStream) LeaveCriticalSection( &cs );
-    }
-    else {
-        if(!pRedirStream) LeaveCriticalSection( &cs );
-        dwRet = GetLastError();
-        EnterCriticalSection( &cs );
-        tcout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
-        LeaveCriticalSection( &cs ); 
-    }
-
-    free(szCmdline);
-    return dwRet;
-}
 
 // Return a string containing a TeX macro that hooks the inclusion commands (\input, \include, \includegraphics) to generate the list of dependencies
 // SH specifies the sharp symbol. It can be used to duplicate the sharp symbol when the macro is used inside another TeX macro.
@@ -1851,7 +1895,7 @@ tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
 }
 
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
-DWORD fullcompile(HANDLE hAbort)
+DWORD fullcompile(AbortableProcessLauncher &launcher)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2017,18 +2061,18 @@ _T("{\\catcode`\\^^M=\\active")
         tcout << fgMsg << "-- Creation of the format file...\n";
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
-        DWORD ret = launch_and_wait(cmdline.c_str(), hAbort, Filter);
+        DWORD ret = launcher.launch_and_wait(cmdline.c_str(), Filter);
         recompilingPreamble = false;
         if( ret )
             return ret;
     }
 
-    return compile(hAbort);
+    return compile(launcher);
 }
 
 
 // Compile the final tex file using the precompiled preamble
-DWORD compile(HANDLE hAbort)
+DWORD compile(AbortableProcessLauncher &launcher)
 {
     if( !CheckFileLoaded() )
         return false;
@@ -2088,7 +2132,7 @@ DWORD compile(HANDLE hAbort)
     LeaveCriticalSection( &cs ); 
 
     // Launch the latex compilation 
-    DWORD ret = launch_and_wait(cmdline.c_str(), hAbort, Filter);
+    DWORD ret = launcher.launch_and_wait(cmdline.c_str(), Filter);
 
     // if the compilation was aborted (because some source file has changed in the meantime) 
     // then do not do any postprocessing
@@ -2298,7 +2342,7 @@ int openfolder()
 
 
 // Convert the postscript file to pdf
-int ps2pdf(HANDLE hAbort)
+int ps2pdf(AbortableProcessLauncher &launcher)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2308,11 +2352,11 @@ int ps2pdf(HANDLE hAbort)
     tstring cmdline = tstring(_T("ps2pdf "))+texbasename+_T(".ps");
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 // Convert the dvi file to postscript using dvips
-int dvips(HANDLE hAbort, tstring opt)
+int dvips(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2322,11 +2366,11 @@ int dvips(HANDLE hAbort, tstring opt)
     tstring cmdline = tstring(_T("dvips "))+texbasename+_T(".dvi ") + opt + _T("-o ")+texbasename+_T(".ps");
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 // Convert the DVI file to PDF using dvips and ps2pdf
-int dvipspdf(HANDLE hAbort, tstring opt)
+int dvipspdf(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2336,18 +2380,18 @@ int dvipspdf(HANDLE hAbort, tstring opt)
 
     tstring cmdline = tstring(_T("dvips "))+texbasename+_T(".dvi ") + opt + _T("-o ")+texbasename+_T(".ps");
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
-    int ret = launch_and_wait(cmdline.c_str(), hAbort);
+    int ret = launcher.launch_and_wait(cmdline.c_str());
     if(ret == 0 ) {
         cmdline = tstring(_T("ps2pdf "))+texbasename+_T(".ps ")+texbasename+_T(".pdf");
         tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
-        int ret = launch_and_wait(cmdline.c_str(), hAbort);
+        int ret = launcher.launch_and_wait(cmdline.c_str());
     }
     LeaveCriticalSection( &cs ); 
     return ret;
 }
 
 // Convert the dvi file to PNG using dvipng
-int dvipng(HANDLE hAbort, tstring opt)
+int dvipng(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2357,11 +2401,11 @@ int dvipng(HANDLE hAbort, tstring opt)
     tstring cmdline = tstring(_T("dvipng "))+texbasename+_T(".dvi ") + opt;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 // Start a custom command
-int custom(HANDLE hAbort, tstring opt)
+int custom(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2371,20 +2415,20 @@ int custom(HANDLE hAbort, tstring opt)
     tstring cmdline = customcmd+_T(" ") +texbasename+_T(".tex ") + opt;
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 // Execute a shell command
-int shell(HANDLE hAbort, tstring cmd)
+int shell(AbortableProcessLauncher &launcher, tstring cmd)
 {
     EnterCriticalSection( &cs );
     tcout << fgMsg << _T(" Running shell command '") << cmd << _T("'\n") << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmd.c_str(), hAbort);
+    return launcher.launch_and_wait(cmd.c_str());
 }
 
 // Run bibtex on the tex file
-int bibtex(HANDLE hAbort)
+int bibtex(AbortableProcessLauncher &launcher)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2397,12 +2441,12 @@ int bibtex(HANDLE hAbort)
     cmdline += texbasename;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 
 // Run makeindex
-int makeindex(HANDLE hAbort, tstring opt)
+int makeindex(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
@@ -2415,7 +2459,7 @@ int makeindex(HANDLE hAbort, tstring opt)
     cmdline += texbasename;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
-    return launch_and_wait(cmdline.c_str(), hAbort);
+    return launcher.launch_and_wait(cmdline.c_str());
 }
 
 // Restart the make thread if necessary.
