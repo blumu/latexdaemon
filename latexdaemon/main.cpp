@@ -155,6 +155,7 @@ int ps2pdf(AbortableProcessLauncher &launcher);
 int bibtex(AbortableProcessLauncher &launcher);
 int makeindex(AbortableProcessLauncher &launcher, tstring opt);
 DWORD make(AbortableProcessLauncher &launcher, JOB makejob);
+int cleanup();
 int edit();
 int view();
 int view_dvi();
@@ -294,13 +295,13 @@ typedef struct {
 
 // define the ID values to indentify the option
 enum { 
-	// command line options
-	OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
-	// prompt commands
-	OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_MAKEINDEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
+    // command line options
+    OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
+    // prompt commands
+    OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_MAKEINDEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
     OPT_CUSTOM, OPT_PWD,
-	OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN,
-	OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
+    OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN, OPT_CLEANUP,
+    OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
 };
 
 // declare a table of CSimpleOpt::SOption structures. See the SimpleOpt.h header
@@ -316,85 +317,87 @@ enum {
 
 // command line argument options
 CSimpleOpt::SOption g_rgOptions[] = {
-    { OPT_USAGE,		_T("-?"),			SO_NONE    },
-    { OPT_USAGE,		_T("--help"),		SO_NONE    },
-    { OPT_USAGE,		_T("-help"),		SO_NONE    },
-    { OPT_INI,			_T("-ini"),			SO_REQ_CMB },
-    { OPT_INI,			_T("--ini"),		SO_REQ_CMB },
-    { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB },
-    { OPT_PREAMBLE,		_T("--preamble"),	SO_REQ_CMB },
-    { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB },
-    { OPT_AFTERJOB,		_T("--afterjob"),	SO_REQ_CMB },
-    { OPT_CUSTOM,		_T("-custom"),	    SO_REQ_CMB },
-    { OPT_CUSTOM,		_T("--custom"),	    SO_REQ_CMB },
-	{ OPT_WATCH,		_T("-watch"),		SO_REQ_CMB },
-    { OPT_WATCH,		_T("--watch"),		SO_REQ_CMB },
-    { OPT_AUXDIR,		_T("-aux-directory"), SO_REQ_CMB },
-    { OPT_AUXDIR,		_T("--aux-directory"), SO_REQ_CMB },
-	{ OPT_AUTODEP,		_T("-autodep"),		SO_REQ_CMB },
-    { OPT_AUTODEP,		_T("--autodep"),	SO_REQ_CMB },
-    { OPT_FORCE,		_T("-force"),		SO_REQ_SEP },
-    { OPT_FORCE,		_T("--force"),		SO_REQ_SEP },
-    { OPT_FILTER,		_T("-filter"),		SO_REQ_CMB },
-    { OPT_FILTER,		_T("--filter"),		SO_REQ_CMB },
-    { OPT_GSVIEW,		_T("--gsview"),		SO_NONE },
-    { OPT_GSVIEW,		_T("-gsview"),		SO_NONE },	
+    { OPT_USAGE,        _T("-?"),            SO_NONE    },
+    { OPT_USAGE,        _T("--help"),        SO_NONE    },
+    { OPT_USAGE,        _T("-help"),        SO_NONE    },
+    { OPT_INI,            _T("-ini"),            SO_REQ_CMB },
+    { OPT_INI,            _T("--ini"),        SO_REQ_CMB },
+    { OPT_PREAMBLE,        _T("-preamble"),    SO_REQ_CMB },
+    { OPT_PREAMBLE,        _T("--preamble"),    SO_REQ_CMB },
+    { OPT_AFTERJOB,        _T("-afterjob"),    SO_REQ_CMB },
+    { OPT_AFTERJOB,        _T("--afterjob"),    SO_REQ_CMB },
+    { OPT_CUSTOM,        _T("-custom"),        SO_REQ_CMB },
+    { OPT_CUSTOM,        _T("--custom"),        SO_REQ_CMB },
+    { OPT_WATCH,        _T("-watch"),        SO_REQ_CMB },
+    { OPT_WATCH,        _T("--watch"),        SO_REQ_CMB },
+    { OPT_AUXDIR,        _T("-aux-directory"), SO_REQ_CMB },
+    { OPT_AUXDIR,        _T("--aux-directory"), SO_REQ_CMB },
+    { OPT_AUTODEP,        _T("-autodep"),        SO_REQ_CMB },
+    { OPT_AUTODEP,        _T("--autodep"),    SO_REQ_CMB },
+    { OPT_FORCE,        _T("-force"),        SO_REQ_SEP },
+    { OPT_FORCE,        _T("--force"),        SO_REQ_SEP },
+    { OPT_FILTER,        _T("-filter"),        SO_REQ_CMB },
+    { OPT_FILTER,        _T("--filter"),        SO_REQ_CMB },
+    { OPT_GSVIEW,        _T("--gsview"),        SO_NONE },
+    { OPT_GSVIEW,        _T("-gsview"),        SO_NONE },    
     SO_END_OF_OPTIONS                   // END
 };
 
 // prompt commands options
 CSimpleOpt::SOption g_rgPromptOptions[] = {
-    { OPT_HELP,			_T("-?"),			SO_NONE		},
-    { OPT_HELP,			_T("-h"),			SO_NONE		},
-    { OPT_HELP,			_T("-help"),		SO_NONE		},
-    { OPT_USAGE,		_T("-u"),			SO_NONE		},
-    { OPT_USAGE,		_T("-usage"),		SO_NONE		},
-    { OPT_BIBTEX,		_T("-b"),			SO_NONE		},
-    { OPT_BIBTEX,		_T("-bibtex"),		SO_NONE		},
-    { OPT_MAKEINDEX,	_T("-mi"),			SO_NONE		},
-    { OPT_MAKEINDEX,    _T("-makeindex"),   SO_NONE		},
-    { OPT_DVIPS,		_T("-d"),			SO_NONE		},
-    { OPT_DVIPS,		_T("-dvips"),		SO_NONE		},
-    { OPT_DVIPSPDF,		_T("-dvipspdf"),    SO_NONE		},
-    { OPT_DVIPNG,		_T("-dvipng"),	    SO_NONE		},
-    { OPT_RUN,		    _T("-r"),	        SO_NONE		},
-    { OPT_RUN,		    _T("-run"),	        SO_NONE		},
-    { OPT_PS2PDF,		_T("-p"),			SO_NONE		},
-    { OPT_PS2PDF,		_T("-ps2pdf"),		SO_NONE		},
-    { OPT_COMPILE,		_T("-c"),			SO_NONE		},
-    { OPT_COMPILE,		_T("-compile"),		SO_NONE		},
-    { OPT_FULLCOMPILE,	_T("-f"),			SO_NONE		},
-    { OPT_FULLCOMPILE,	_T("-fullcompile"),	SO_NONE		},
-    { OPT_WATCH,		_T("-watch"),		SO_REQ_CMB  },
-    { OPT_AUXDIR,		_T("-aux-directory"), SO_REQ_CMB },
-    { OPT_FILTER,		_T("-filter"),		SO_REQ_CMB  },
-    { OPT_INI,			_T("-ini"),			SO_REQ_CMB  },
-    { OPT_PREAMBLE,		_T("-preamble"),	SO_REQ_CMB  },
-    { OPT_AUTODEP,		_T("-autodep"),     SO_REQ_CMB  },
-    { OPT_AFTERJOB,		_T("-afterjob"),	SO_REQ_CMB  },
-    { OPT_CUSTOM,		_T("-custom"),	    SO_REQ_CMB  },    
-    { OPT_GSVIEW,		_T("-gsview"),		SO_REQ_CMB  },
-	{ OPT_PWD,			_T("-pwd"),			SO_NONE		},
-	{ OPT_QUIT,			_T("-q"),			SO_NONE		},
-	{ OPT_QUIT,			_T("-quit"),		SO_NONE		},
-	{ OPT_QUIT,			_T("-exit"),		SO_NONE		},
-	{ OPT_EDIT,			_T("-e"),			SO_NONE		},
-	{ OPT_EDIT,			_T("-edit"),		SO_NONE		},
-	{ OPT_VIEWOUTPUT,	_T("-v"),			SO_NONE		},
-	{ OPT_VIEWOUTPUT,	_T("-view"),		SO_NONE		},
-	{ OPT_VIEWDVI,		_T("-vi"),			SO_NONE		},
-	{ OPT_VIEWDVI,		_T("-viewdvi"),		SO_NONE		},
-	{ OPT_VIEWPS,		_T("-vs"),			SO_NONE		},
-	{ OPT_VIEWPS,		_T("-viewps"),		SO_NONE		},
-	{ OPT_VIEWPDF,		_T("-vf"),			SO_NONE		},
-	{ OPT_VIEWPDF,		_T("-viewpdf"),		SO_NONE		},
-	{ OPT_OPENFOLDER,	_T("-x"),			SO_NONE		},
-	{ OPT_OPENFOLDER,	_T("-explorer"),	SO_NONE		},
-	{ OPT_LOAD,			_T("-l"),			SO_NONE		},
-	{ OPT_LOAD,			_T("-load"),		SO_NONE		},
-	{ OPT_SPAWN,		_T("-s"),			SO_NONE		},
-	{ OPT_SPAWN,		_T("-spawn"),		SO_NONE		},
-    SO_END_OF_OPTIONS                   // END
+    { OPT_HELP,         _T("-?"),             SO_NONE },
+    { OPT_HELP,         _T("-h"),             SO_NONE },
+    { OPT_HELP,         _T("-help"),          SO_NONE },
+    { OPT_USAGE,        _T("-u"),             SO_NONE },
+    { OPT_USAGE,        _T("-usage"),         SO_NONE },
+    { OPT_BIBTEX,       _T("-b"),             SO_NONE },
+    { OPT_BIBTEX,       _T("-bibtex"),        SO_NONE },
+    { OPT_MAKEINDEX,    _T("-mi"),            SO_NONE },
+    { OPT_MAKEINDEX,    _T("-makeindex"),     SO_NONE },
+    { OPT_DVIPS,        _T("-d"),             SO_NONE },
+    { OPT_DVIPS,        _T("-dvips"),         SO_NONE },
+    { OPT_DVIPSPDF,     _T("-dvipspdf"),      SO_NONE },
+    { OPT_DVIPNG,       _T("-dvipng"),        SO_NONE },
+    { OPT_RUN,          _T("-r"),             SO_NONE },
+    { OPT_RUN,          _T("-run"),           SO_NONE },
+    { OPT_PS2PDF,       _T("-p"),             SO_NONE },
+    { OPT_PS2PDF,       _T("-ps2pdf"),        SO_NONE },
+    { OPT_COMPILE,      _T("-c"),             SO_NONE },
+    { OPT_COMPILE,      _T("-compile"),       SO_NONE },
+    { OPT_FULLCOMPILE,  _T("-f"),             SO_NONE },
+    { OPT_FULLCOMPILE,  _T("-fullcompile"),   SO_NONE },
+    { OPT_WATCH,        _T("-watch"),         SO_REQ_CMB },
+    { OPT_AUXDIR,       _T("-aux-directory"), SO_REQ_CMB },
+    { OPT_FILTER,       _T("-filter"),        SO_REQ_CMB },
+    { OPT_INI,          _T("-ini"),           SO_REQ_CMB },
+    { OPT_PREAMBLE,     _T("-preamble"),      SO_REQ_CMB },
+    { OPT_AUTODEP,      _T("-autodep"),       SO_REQ_CMB },
+    { OPT_AFTERJOB,     _T("-afterjob"),      SO_REQ_CMB },
+    { OPT_CUSTOM,       _T("-custom"),        SO_REQ_CMB },
+    { OPT_GSVIEW,       _T("-gsview"),        SO_REQ_CMB },
+    { OPT_PWD,          _T("-pwd"),           SO_NONE },
+    { OPT_QUIT,         _T("-q"),             SO_NONE },
+    { OPT_QUIT,         _T("-quit"),          SO_NONE },
+    { OPT_QUIT,         _T("-exit"),          SO_NONE },
+    { OPT_CLEANUP,      _T("-cleanup"),       SO_NONE },
+    { OPT_CLEANUP,      _T("-cu"),            SO_NONE },
+    { OPT_EDIT,         _T("-e"),             SO_NONE },
+    { OPT_EDIT,         _T("-edit"),          SO_NONE },
+    { OPT_VIEWOUTPUT,   _T("-v"),             SO_NONE },
+    { OPT_VIEWOUTPUT,   _T("-view"),          SO_NONE },
+    { OPT_VIEWDVI,      _T("-vi"),            SO_NONE },
+    { OPT_VIEWDVI,      _T("-viewdvi"),       SO_NONE },
+    { OPT_VIEWPS,       _T("-vs"),            SO_NONE },
+    { OPT_VIEWPS,       _T("-viewps"),        SO_NONE },
+    { OPT_VIEWPDF,      _T("-vf"),            SO_NONE },
+    { OPT_VIEWPDF,      _T("-viewpdf"),       SO_NONE },
+    { OPT_OPENFOLDER,   _T("-x"),             SO_NONE },
+    { OPT_OPENFOLDER,   _T("-explorer"),      SO_NONE },
+    { OPT_LOAD,         _T("-l"),             SO_NONE },
+    { OPT_LOAD,         _T("-load"),          SO_NONE },
+    { OPT_SPAWN,        _T("-s"),             SO_NONE },
+    { OPT_SPAWN,        _T("-spawn"),         SO_NONE },
+    SO_END_OF_OPTIONS  // END
 };
 
 
@@ -1162,6 +1165,7 @@ unsigned __stdcall CommandPromptThread( void *param )
                  << "  vs|viewps          view the PS file" << endl 
                  << "  vf|viewpdf         view the PDF file" << endl 
                  << "File managment commands:" << endl
+                 << "  cu|cleanup         cleanup the files in the auxiliaray directory" << endl
                  << "  e[dit]             edit the .tex file" << endl
                  << "  l[oad] [file.tex]  change the active tex document" << endl
                  << "  pwd                print working document/directory" << endl
@@ -1201,6 +1205,7 @@ unsigned __stdcall CommandPromptThread( void *param )
         case OPT_BIBTEX:     bibtex(mainlauncher);      break;
         case OPT_PS2PDF:     ps2pdf(mainlauncher);      break;
         case OPT_EDIT:       edit();        break;
+        case OPT_CLEANUP:    cleanup();     break;
         case OPT_VIEWOUTPUT: view();        break;
         case OPT_VIEWDVI:    view_dvi();    break;
         case OPT_VIEWPS:     view_ps();     break;
@@ -1402,13 +1407,17 @@ BOOL IsWow64()
 BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
 {
     /// abort the current "make" thread if it is already started
-    if( hMakeThread || mainlauncher.isrunning() ) {
-        if( hMakeThread ) {
+    DWORD exitcode;
+    GetExitCodeThread(hMakeThread,&exitcode);
+    if( (exitcode==STILL_ACTIVE) || mainlauncher.isrunning() ) {
+        if( exitcode==STILL_ACTIVE ) {
             SetEvent(hEvtAbortMake);
-            // wait for the "make" thread to end
-            //WaitForSingleObject(hMakeThread, INFINITE);
-            CloseHandle(hMakeThread);
-            hMakeThread = NULL;
+            if(hMakeThread) {
+                // wait for the "make" thread to end
+                //WaitForSingleObject(hMakeThread, INFINITE);
+                CloseHandle(hMakeThread);
+                hMakeThread = NULL;
+            }
         }
         if( mainlauncher.isrunning() )
             mainlauncher.abort();
@@ -1423,6 +1432,8 @@ BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
 
 int _tmain(int argc, TCHAR *argv[])
 {
+
+    SetConsoleCtrlHandler(CtrlBreakHandlerRoutine, TRUE);
 
     progname = GetFileBaseNamePart(argv[0]);
 
@@ -1522,7 +1533,6 @@ int _tmain(int argc, TCHAR *argv[])
         ret = loadfile(nglob, initialjob);
     }
 
-    SetConsoleCtrlHandler(CtrlBreakHandlerRoutine, TRUE);
     if( Watch ) { // If watching has been requested by the user
         // if some correct file was given as a command line parameter 
         if( ret == 0 )
@@ -1943,6 +1953,7 @@ DWORD fullcompile(AbortableProcessLauncher &launcher)
         }
         else // if( PreambleType == Internal )
         {
+            /// The following bits of code are a modification of the mylatex package
             latex_pre = TEX_MAKEATLETTER + autodep_pre + 
 // Save the original definitions.
 _T("\\let\\ORGdocument\\document ")
@@ -1988,8 +1999,12 @@ _T("\\def\\document{\\endgroup")
 // eg changebar package *closes* the stream in \AtBeginDocument, so need
 // to make sure it is opened before that. Make a special purpose hook.
 _T("\\def\\openout#1 {")
-  _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }}")
+  _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }")
+  //_T("\\g@addto@macro\\DAEMONclose{\\immediate\\openout#1 }")
+  //_T("\\immediate\\ORGopenout#1 ")
+_T("}")
 _T("\\let\\DAEMONopens\\@empty")
+//_T("\\let\\DAEMONclose\\@empty")
 
 // Templates for ending the `preamble skipping process'.
 _T("\\def\\MARKbegin{\\begin{document}}")
@@ -2315,6 +2330,42 @@ int edit()
     shei.nShow = SW_SHOWNORMAL;
     shei.hInstApp = NULL;
     return ShellExecuteEx(&shei) ? 0 : GetLastError();
+}
+
+// Cleanup the auxiliary directory
+int cleanup()
+{
+    if( !CheckFileLoaded() )
+        return 0;
+
+    EnterCriticalSection( &cs );
+    tcout << fgMsg << "-- cleaning up...\n";
+    LeaveCriticalSection( &cs ); 
+
+    if( auxdir != _T("") )
+        auxdir+_T("\\");
+
+    static PCTSTR clean_ext[] = { _T(".toc"), _T(".tdo"), _T(".out"), _T(".not"), _T(".lot"),
+                                  _T(".aux"), _T(".dep"), _T(".idx"), _T(".lof"), _T(".log"),
+                                  _T(".bbl"), _T(".blg"), _T(".ind"), _T(".ilg"),
+                                  _T(".aux.bak"), _T(".out.bak"), _T(".pdfsync"), _T("-preamble.dep"),
+                                  _T("-latex.fmt"), _T("-latex.log"), _T("-pdflatex.fmt"), _T("-pdflatex.log")
+    };
+
+    int n = 0;
+    for(int i=0; i<_countof(clean_ext);i++) {
+        tstring file = tstring(auxdir)+_T("\\")+texbasename+clean_ext[i];
+        if( FileExists(file.c_str()) ) {
+            if(DeleteFile(file.c_str()))
+                n++;
+        }
+    }
+
+    EnterCriticalSection( &cs );
+    tcout << fgMsg << n << " files deleted from '" << auxdir << "\\'. \n";
+    LeaveCriticalSection( &cs ); 
+
+    return 0;
 }
 
 // Open the folder containing the .tex file
