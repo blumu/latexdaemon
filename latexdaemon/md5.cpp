@@ -226,7 +226,7 @@ bool md5::DigestFile(PCTSTR szFilename, DWORD ccbSize)
                 bSuccess = ReadFile(hFile, chBuffer, min(remaining, sizeof(chBuffer)), &dwBytesRead, NULL);
                 Update(chBuffer, dwBytesRead);
                 remaining -= dwBytesRead;
-            } while (bSuccess && remaining>0);
+            } while (bSuccess && remaining>0 && dwBytesRead>0);
 
             //while (nLen = (uint4)fread (chBuffer, 1, 1024, file))
 

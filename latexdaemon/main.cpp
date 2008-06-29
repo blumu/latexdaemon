@@ -1956,8 +1956,9 @@ DWORD fullcompile(AbortableProcessLauncher &launcher)
             /// The following bits of code are a modification of the mylatex package
             latex_pre = TEX_MAKEATLETTER + autodep_pre + 
 // Save the original definitions.
-_T("\\let\\ORGdocument\\document ")
-_T("\\let\\ORGopenout\\openout ")
+_T("\\let\\ORGdocument\\document")
+_T("\\let\\ORGopenout\\openout")
+//_T("\\let\\ORGcloseout\\closeout")
 
 // Version of \document to use on normal run
 //_T("\\let\\DAEMONdocument")
@@ -1985,6 +1986,7 @@ _T("\\def\\document{\\endgroup")
    _T(" }}")
  _T("\\let\\document\\ORGdocument")
  _T("\\let\\openout\\ORGopenout")
+ //_T("\\let\\closeout\\ORGcloseout")
  _T("\\makeatother")
  _T("\\catcode`\\\\=13\\relax")
  _T("\\catcode`\\#=12\\relax")
@@ -2000,11 +2002,19 @@ _T("\\def\\document{\\endgroup")
 // to make sure it is opened before that. Make a special purpose hook.
 _T("\\def\\openout#1 {")
   _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }")
-  //_T("\\g@addto@macro\\DAEMONclose{\\immediate\\openout#1 }")
-  //_T("\\immediate\\ORGopenout#1 ")
+  _T("\\immediate\\ORGopenout#1 ")
 _T("}")
 _T("\\let\\DAEMONopens\\@empty")
-//_T("\\let\\DAEMONclose\\@empty")
+
+// TODO remove the file that are closed from the list \DAEMONopens
+/*
+_T("\\def\\closeout#1=#2 {")
+  _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1=#2 }")
+  //_T("\\g@addto@macro\\DAEMONclose{\\immediate\\openout#1 }")
+  _T("\\immediate\\ORGcloseout#1=#2 ")
+_T("}")
+*/
+
 
 // Templates for ending the `preamble skipping process'.
 _T("\\def\\MARKbegin{\\begin{document}}")
