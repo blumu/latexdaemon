@@ -92,6 +92,8 @@ private:
 /// Constants 
 
 
+// preference file extension
+#define PREF_EXT                        _T(".daemon")
 
 #define DEFAULTPREAMBLE2_BASENAME       _T("preamble")
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME _T(".tex")
@@ -218,6 +220,8 @@ HANDLE hEvtDependenciesChanged = NULL;
 // is there a make thread currently compiling the preamble?
 bool recompilingPreamble = false;
 
+// job to be executed at initialazation of the daemon can be overwritten by the command line parameter '-force=...'
+JOB initialjob = Rest;
 
 // Reg key where to find the path to gswin32
 #define REGKEY_GSVIEW32_PATH _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\gsview32.exe")
@@ -260,12 +264,16 @@ tstring output_ext = _T(".dvi");
 
 
 // Default command line arguments for TeX
-tstring texoptions = _T(" -interaction=nonstopmode --src-specials "); // -max-print-line=120 
+tstring texoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120 
 
 // Default command line arguments for pdfTeX
 tstring pdftexoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120 
 
-// custom command line
+// default custom argument to be passed to TeX or pdfTeX
+// can be overwritten with the option "custom_args=..."
+tstring customtexargs = _T("--src-specials");
+
+// command line of a custom command (can be used to launch a custom batch file)
 tstring customcmd = _T("");
 
 // static dependencies (added by the user) including the main .tex file
@@ -299,7 +307,7 @@ enum {
     OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
     // prompt commands
     OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_MAKEINDEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
-    OPT_CUSTOM, OPT_PWD,
+    OPT_CUSTOM, OPT_CUSTOMTEXARG, OPT_PWD,
     OPT_PS2PDF, OPT_EDIT, OPT_VIEWOUTPUT, OPT_OPENFOLDER, OPT_LOAD, OPT_SPAWN, OPT_CLEANUP,
     OPT_VIEWDVI, OPT_VIEWPS, OPT_VIEWPDF, OPT_GSVIEW, OPT_AUTODEP, OPT_FILTER
 };
@@ -317,29 +325,31 @@ enum {
 
 // command line argument options
 CSimpleOpt::SOption g_rgOptions[] = {
-    { OPT_USAGE,        _T("-?"),            SO_NONE    },
-    { OPT_USAGE,        _T("--help"),        SO_NONE    },
-    { OPT_USAGE,        _T("-help"),        SO_NONE    },
-    { OPT_INI,            _T("-ini"),            SO_REQ_CMB },
-    { OPT_INI,            _T("--ini"),        SO_REQ_CMB },
-    { OPT_PREAMBLE,        _T("-preamble"),    SO_REQ_CMB },
-    { OPT_PREAMBLE,        _T("--preamble"),    SO_REQ_CMB },
-    { OPT_AFTERJOB,        _T("-afterjob"),    SO_REQ_CMB },
-    { OPT_AFTERJOB,        _T("--afterjob"),    SO_REQ_CMB },
-    { OPT_CUSTOM,        _T("-custom"),        SO_REQ_CMB },
-    { OPT_CUSTOM,        _T("--custom"),        SO_REQ_CMB },
-    { OPT_WATCH,        _T("-watch"),        SO_REQ_CMB },
-    { OPT_WATCH,        _T("--watch"),        SO_REQ_CMB },
-    { OPT_AUXDIR,        _T("-aux-directory"), SO_REQ_CMB },
-    { OPT_AUXDIR,        _T("--aux-directory"), SO_REQ_CMB },
-    { OPT_AUTODEP,        _T("-autodep"),        SO_REQ_CMB },
-    { OPT_AUTODEP,        _T("--autodep"),    SO_REQ_CMB },
-    { OPT_FORCE,        _T("-force"),        SO_REQ_SEP },
-    { OPT_FORCE,        _T("--force"),        SO_REQ_SEP },
-    { OPT_FILTER,        _T("-filter"),        SO_REQ_CMB },
-    { OPT_FILTER,        _T("--filter"),        SO_REQ_CMB },
-    { OPT_GSVIEW,        _T("--gsview"),        SO_NONE },
-    { OPT_GSVIEW,        _T("-gsview"),        SO_NONE },    
+    { OPT_USAGE,        _T("-?"),              SO_NONE    },
+    { OPT_USAGE,        _T("--help"),          SO_NONE    },
+    { OPT_USAGE,        _T("-help"),           SO_NONE    },
+    { OPT_INI,          _T("-ini"),            SO_REQ_CMB },
+    { OPT_INI,          _T("--ini"),           SO_REQ_CMB },
+    { OPT_PREAMBLE,     _T("-preamble"),       SO_REQ_CMB },
+    { OPT_PREAMBLE,     _T("--preamble"),      SO_REQ_CMB },
+    { OPT_AFTERJOB,     _T("-afterjob"),       SO_REQ_CMB },
+    { OPT_AFTERJOB,     _T("--afterjob"),      SO_REQ_CMB },
+    { OPT_CUSTOM,       _T("-custom"),         SO_REQ_CMB },
+    { OPT_CUSTOM,       _T("--custom"),        SO_REQ_CMB },
+    { OPT_CUSTOMTEXARG, _T("-custom_args"),    SO_REQ_CMB },
+    { OPT_CUSTOMTEXARG, _T("--custom_args"),   SO_REQ_CMB },
+    { OPT_WATCH,        _T("-watch"),          SO_REQ_CMB },
+    { OPT_WATCH,        _T("--watch"),         SO_REQ_CMB },
+    { OPT_AUXDIR,       _T("-aux-directory"),  SO_REQ_CMB },
+    { OPT_AUXDIR,       _T("--aux-directory"), SO_REQ_CMB },
+    { OPT_AUTODEP,      _T("-autodep"),        SO_REQ_CMB },
+    { OPT_AUTODEP,      _T("--autodep"),       SO_REQ_CMB },
+    { OPT_FORCE,        _T("-force"),          SO_REQ_SEP },
+    { OPT_FORCE,        _T("--force"),         SO_REQ_SEP },
+    { OPT_FILTER,       _T("-filter"),         SO_REQ_CMB },
+    { OPT_FILTER,       _T("--filter"),        SO_REQ_CMB },
+    { OPT_GSVIEW,       _T("--gsview"),        SO_NONE },
+    { OPT_GSVIEW,       _T("-gsview"),         SO_NONE },    
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -374,6 +384,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_AUTODEP,      _T("-autodep"),       SO_REQ_CMB },
     { OPT_AFTERJOB,     _T("-afterjob"),      SO_REQ_CMB },
     { OPT_CUSTOM,       _T("-custom"),        SO_REQ_CMB },
+    { OPT_CUSTOMTEXARG, _T("-custom_args"),    SO_REQ_CMB },
     { OPT_GSVIEW,       _T("-gsview"),        SO_REQ_CMB },
     { OPT_PWD,          _T("-pwd"),           SO_NONE },
     { OPT_QUIT,         _T("-q"),             SO_NONE },
@@ -499,6 +510,8 @@ void ShowUsage() {
          << "     . 'rest' (default) do nothing."<<endl
          << " --custom=\"COMMAND LINE\"" << endl 
          << "   Specifies a command line to execute when afterjob is set to the value 'custom'." << endl 
+         << " --custom_args=arguments" << endl 
+         << "   Specifies custom arguments to be passed to the TeX engine." << endl 
          << " --filter={highlight|raw|err|warn|err+warn}" << endl 
          << "   Set the latex output filter mode. Default: highlight" <<endl <<endl
          << " --preamble={yes|no}" << endl 
@@ -653,22 +666,17 @@ void StopAndWaitUntilEnd_WatchingThread()
     hWatchingThread = NULL;
 }
 
-bool IsFileLoaded()
-{
-    return ( texbasename != _T("") );
-}
-
 // Check that a file has been loaded
 bool CheckFileLoaded()
 {
-	if( !IsFileLoaded() ) {
-		EnterCriticalSection( &cs );
-		tcout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
-		LeaveCriticalSection( &cs ); 
-		return false;
-	}
-	else
-		return true;
+    if( !FileLoaded ) {
+        EnterCriticalSection( &cs );
+        tcout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
+        LeaveCriticalSection( &cs ); 
+        return false;
+    }
+    else
+        return true;
 }
 
 
@@ -757,7 +765,7 @@ void ExecuteOptionIni( tstring optionarg )
     else 
         output_ext = _T(".dvi"); // dvi by default
 
-    if( IsFileLoaded() ) {
+    if( FileLoaded ) {
         SetPreambleFormatName(); // reset the name of the current preamble format file
         if( !PreambleFormatFileUptodate() )
             fullcompile(mainlauncher);      // recompile the preamble format file
@@ -776,16 +784,16 @@ void ExecuteOptionPreamble( tstring optionarg )
 }
 
 // Code executed when the -force option is specified
-void ExecuteOptionForce( tstring optionarg, JOB &force )
+void ExecuteOptionForce( tstring optionarg )
 {
     EnterCriticalSection( &cs );
     if( optionarg==_T("fullcompile") ) {
-        force = FullCompile;
-        tcout << fgNormal << "-Initial full compilation forced." << endl;
+        initialjob = FullCompile;
+        tcout << fgNormal << "-An initial full compilation is requested." << endl;
     }
     else {
-        force = Compile;
-        tcout << fgNormal << "-Initial compilation forced." << endl;
+        initialjob = Compile;
+        tcout << fgNormal << "-An initial compilation is requested." << endl;
     }
     LeaveCriticalSection( &cs );
 }
@@ -822,33 +830,42 @@ void ExecuteOptionAfterJob( tstring optionarg )
 	LeaveCriticalSection(&cs);
 }
 
-// Code executed when the -custom option is specified
+// Code executed when the -custom option is set
 void ExecuteOptionCustom( tstring optionarg )
 {
-	EnterCriticalSection( &cs );
-	customcmd = optionarg;
+    EnterCriticalSection( &cs );
+    customcmd = optionarg;
     tcout << fgNormal << "-Custom command set to '" << customcmd << "'" << endl;
-	LeaveCriticalSection(&cs);
+    LeaveCriticalSection(&cs);
+}
+
+// Code executed when the -customargs option is set
+void ExecuteOptionCustomTexArg( tstring optionarg )
+{
+    EnterCriticalSection( &cs );
+    customtexargs = optionarg;
+    tcout << fgNormal << "-Custom argument to be passed to the TeX engine: '" << customtexargs << "'" << endl;
+    LeaveCriticalSection(&cs);
 }
 
 // Code executed when the -watch option is specified
 void ExecuteOptionWatch( tstring optionarg )
 {
-	Watch = optionarg != _T("no");
-	if( Watch ) {
-		EnterCriticalSection( &cs );
-		tcout << fgNormal << "-File modification monitoring activated" << endl;
-		LeaveCriticalSection( &cs );
-		if( FileLoaded )
-			RestartWatchingThread();
-	}
-	else {
-		EnterCriticalSection( &cs );
-		tcout << fgNormal << "-File modification monitoring disabled" << endl;
-		LeaveCriticalSection( &cs );
-		// Stop the watching thread
+    Watch = optionarg != _T("no");
+    if( Watch ) {
+        EnterCriticalSection( &cs );
+        tcout << fgNormal << "-File modification monitoring activated" << endl;
+        LeaveCriticalSection( &cs );
+        if( FileLoaded )
+            RestartWatchingThread();
+    }
+    else {
+        EnterCriticalSection( &cs );
+        tcout << fgNormal << "-File modification monitoring disabled" << endl;
+        LeaveCriticalSection( &cs );
+        // Stop the watching thread
         StopAndWaitUntilEnd_WatchingThread();
-	}
+    }
 }
 
 // Code executed when the -aux-directory option is specified
@@ -1071,6 +1088,292 @@ HWND GetConsoleHWND(void)
    }
 
 
+// Execute a command specified by a string
+// return ERROR_BAD_COMMANDFORMAT if the command is badly formatted or if the command does not exist
+//        ERROR_QUIT_COMMAND_EXECUTED if the command executed is 'quit'
+//        ERROR_PROCLAUNCH_COMMAND_EXECUTED if the command has launched another process
+//        ERROR_BASIC_COMMAND_EXECUTED for any other command
+enum { ERROR_BAD_COMMANDFORMAT,
+        ERROR_QUIT_COMMAND_EXECUTED,
+        ERROR_PROCLAUNCH_COMMAND_EXECUTED,
+        ERROR_BASIC_COMMAND_EXECUTED };
+int ExecuteCommand(tstring command)
+{
+    // Read a command from the user
+#define DUMMYCMD        _T("dummy -")
+    PTSTR pszCmdline = (PTSTR) malloc((command.size()+_countof(DUMMYCMD))*sizeof(TCHAR));
+    _tcscpy(pszCmdline, DUMMYCMD);
+    _tcscat(pszCmdline, command.c_str());
+
+    // Convert the command line into an argv table 
+    int argc;
+    PTSTR *argv = CommandLineToArgv(pszCmdline, &argc);
+    // Parse the command line
+    CSimpleOpt args(argc, argv, g_rgPromptOptions, true);
+
+    args.Next(); // get the first command recognized
+    if (args.LastError() != SO_SUCCESS) {
+        // Set the beginning of the error message
+        TCHAR *pszError = _T("Unknown error");
+        switch (args.LastError()) {
+        case SO_OPT_INVALID:
+            pszError = _T("Unrecognized command");
+            break;
+        case SO_OPT_MULTIPLE:
+            pszError = _T("This command takes multiple arguments");
+            break;
+        case SO_ARG_INVALID:
+            pszError = _T("This command does not accept argument");
+            break;
+        case SO_ARG_INVALID_TYPE:
+            pszError = _T("Invalid argument format");
+            break;
+        case SO_ARG_MISSING:
+            pszError = _T("Required argument is missing");
+            break;
+        }
+        // set the end of error message
+        EnterCriticalSection( &cs );
+            LPCTSTR optiontext = args.OptionText();
+            // remove the extra '-' that we have appened before the command name
+            if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
+                optiontext++;
+            // don't show error message for the empty command
+            if(  optiontext[0] != 0 ) {
+                tcout << fgErr << pszError << ": '" << optiontext << "' (use help to get command line help)"  << fgNormal << endl;
+            }
+        LeaveCriticalSection( &cs );
+        LocalFree(argv);
+        free(pszCmdline);
+        return ERROR_BAD_COMMANDFORMAT;
+    }
+    
+    // default return value
+    int iret = ERROR_BASIC_COMMAND_EXECUTED;
+    switch( args.OptionId() ) {
+    case OPT_USAGE:
+        EnterCriticalSection( &cs );
+            tcout << fgNormal;
+            ShowUsage();
+        LeaveCriticalSection( &cs ); 
+        break;
+    case OPT_HELP:
+        EnterCriticalSection( &cs );
+        tcout << fgNormal << "The following commands are available:" << endl
+             << "Latex related commands:" << endl
+             << "  b[ibtex]           build the bibliography file using bibtex" << endl
+             << "  c[compile]         compile the .tex file using the precompiled preamble" << endl
+             << "  d[vips]            DVI -> PS conversion" << endl
+             << "  dvipspdf           DVI -> PS -> PDF conversion" << endl
+             << "  dvipng             DVI -> PNG conversion" << endl
+             << "  f[ullcompile]      compile the preamble and the .tex file" << endl
+             << "  mi|makeindex       build the index file using makeindex" << endl
+             << "  p[s2pdf]           PS -> PDF conversion" << endl
+             << "  v[iew]             view the output file (DVI or PDF depending on ini value)" << endl
+             << "  vi|viewdvi         view the DVI file" << endl 
+             << "  vs|viewps          view the PS file" << endl 
+             << "  vf|viewpdf         view the PDF file" << endl 
+             << "File managment commands:" << endl
+             << "  cu|cleanup         cleanup the files in the auxiliaray directory" << endl
+             << "  e[dit]             edit the .tex file" << endl
+             << "  l[oad] [file.tex]  change the active tex document" << endl
+             << "  pwd                print working document/directory" << endl
+             << "  s[pawn] [file.tex] spawn a new latexdaemon process" << endl
+             << "  x|explore          explore the folder containing the .tex file" << endl
+             << "Others:" << endl
+             << "  h[elp]             show this message" << endl
+             << "  q[uit]             quit the program" << endl
+             << "  r[un] COMMANDLINE  execute a shell command" << endl
+             << "  u[sage]            show the help on command line parameters usage" << endl << endl
+             << "Options can be configured using the following commands:" << endl
+             << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
+             << "          job to be executed after latex compilation" << endl
+             << "  autodep={yes|no}   automatic dependency detection" << endl
+             << "  aux-directory=DIR" << endl
+             << "          Use DIR as the directory to write auxiliary files to."<<endl
+             << "  custom=\"COMMAND LINE\"" << endl
+             << "          custom command to execute when afterjob is set to custom" << endl
+             << "  custom_args=arguments" << endl
+             << "          custom arguments to be passed to the TeX engine" << endl
+             << "  filter={highlight|raw|err|warn|err+warn}" << endl
+             << "          error messages filter mode (highlight by default)" << endl
+             << "  gsview={yes|no}" << endl
+             << "          view PS/PDF with GSView and send auto-refresh notifications" << endl
+             << "  ini=inifile        initial format file (default to latex)" << endl
+             << "  preamble={yes|no}  preamble precompilation (requires a file reload)" << endl
+             << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
+        LeaveCriticalSection( &cs ); 
+        break;
+    case OPT_INI:        ExecuteOptionIni(args.OptionArg());              break;
+    case OPT_PREAMBLE:   ExecuteOptionPreamble(args.OptionArg());         break;
+    case OPT_AFTERJOB:   ExecuteOptionAfterJob(args.OptionArg());         break;
+    case OPT_CUSTOM:     ExecuteOptionCustom(args.OptionArg());         break;
+    case OPT_CUSTOMTEXARG: ExecuteOptionCustomTexArg(args.OptionArg());   break;
+    case OPT_WATCH:      ExecuteOptionWatch(args.OptionArg());            break;
+    case OPT_AUXDIR:     ExecuteOptionAuxDirectory(args.OptionArg());            break;
+    case OPT_AUTODEP:    ExecuteOptionAutoDependencies(args.OptionArg()); break;
+    case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
+    case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
+    case OPT_BIBTEX:     bibtex(mainlauncher);      break;
+    case OPT_PS2PDF:     ps2pdf(mainlauncher);      break;
+    case OPT_EDIT:       edit();        break;
+    case OPT_CLEANUP:    cleanup();     break;
+    case OPT_VIEWOUTPUT: view();        break;
+    case OPT_VIEWDVI:    view_dvi();    break;
+    case OPT_VIEWPS:     view_ps();     break;
+    case OPT_VIEWPDF:    view_pdf();    break;
+    case OPT_OPENFOLDER: openfolder();  break;
+    case OPT_PWD:        pwd();         break;
+    
+    case OPT_MAKEINDEX:
+        {
+            tstring opt;
+            for(int i=2;i<argc;i++)
+                opt+=tstring(argv[i]) + _T(" ");
+            makeindex(mainlauncher, opt);
+        }
+        break;
+
+    case OPT_RUN:
+        {
+            tstring cmd;
+            for(int i=2;i<argc;i++)
+                cmd+=tstring(argv[i]) + _T(" ");
+            shell(mainlauncher, cmd);
+        }
+        break;
+    case OPT_DVIPS:
+        {
+            tstring opt;
+            for(int i=2;i<argc;i++)
+                opt+=tstring(argv[i]) + _T(" ");
+            dvips(mainlauncher, opt);
+        }
+        break;
+    case OPT_DVIPSPDF:
+        {
+            tstring opt;
+            for(int i=2;i<argc;i++)
+                opt+=tstring(argv[i]) + _T(" ");
+            dvipspdf(mainlauncher, opt);
+        }
+        break;
+
+    case OPT_DVIPNG:
+        {
+            tstring opt;
+            for(int i=2;i<argc;i++)
+                opt+=tstring(argv[i]) + _T(" ");
+            dvipng(mainlauncher, opt);
+        }
+        break;
+
+    case OPT_SPAWN: {
+        // parse the filenames parameters (tex file name and dependencies)
+        CSimpleGlob nglob;
+        if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
+            tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+        }
+        else
+            spawn(argc-1, &argv[1]);
+        break;
+    }
+
+    case OPT_LOAD:
+        {
+            // parse the filenames parameters (tex file name and dependencies)
+            CSimpleGlob nglob;
+            while (args.Next()); // get the filename passed in parameters
+            if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
+                tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+            }
+            else {
+                // if no argument is specified then we show a dialogbox to the user to let him select a file
+                if( args.FileCount() == 0 ){
+                    OPENFILENAME ofn;       // common dialog box structure
+                    TCHAR szFile[260];       // buffer for file name
+
+                    // Initialize OPENFILENAME
+                    ZeroMemory(&ofn, sizeof(ofn));
+                    ofn.lStructSize = sizeof(ofn);
+                    ofn.hwndOwner = GetConsoleHWND();
+                    ofn.lpstrFile = szFile;
+                    //
+                    // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
+                    // use the contents of szFile to initialize itself.
+                    //
+                    ofn.lpstrFile[0] = '\0';
+                    ofn.nMaxFile = sizeof(szFile);
+                    ofn.lpstrFilter = _T("All(*.*)\0*.*\0Tex/Latex file (*.tex)\0*.tex\0");
+                    ofn.nFilterIndex = 2;
+                    ofn.lpstrFileTitle = NULL;
+                    ofn.nMaxFileTitle = 0;
+                    ofn.lpstrInitialDir = NULL;
+                    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+                    // Display the Open dialog box. 
+
+                    if (GetOpenFileName(&ofn)==TRUE) {
+                        if (SG_SUCCESS != nglob.Add(szFile) ) {
+                            tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
+                            goto err_load;
+                        }
+                    }
+                    else {
+                        tcout << fgErr << _T("No input file specified!\n" << fgNormal);
+                        goto err_load;
+                    }
+
+                }
+
+                // Load the file
+                if( loadfile(nglob, Rest) == 0 ) {
+                    // Restart the watching thread
+                    if( Watch )
+                        RestartWatchingThread();
+                }
+            }
+        }
+err_load:
+
+        break;
+
+    case OPT_COMPILE:
+        {
+            bool started = RestartMakeThread(Compile);
+            // wait for the "make" thread to end
+            if( started )
+                WaitForSingleObject(hMakeThread, INFINITE);
+            iret = started ? ERROR_PROCLAUNCH_COMMAND_EXECUTED : ERROR_BASIC_COMMAND_EXECUTED;
+        }
+        break;
+    case OPT_FULLCOMPILE:
+        {
+            bool started = RestartMakeThread(FullCompile);
+            // wait for the "make" thread to end
+            if( started )
+                WaitForSingleObject(hMakeThread, INFINITE);
+            iret = started ? ERROR_PROCLAUNCH_COMMAND_EXECUTED : ERROR_BASIC_COMMAND_EXECUTED;
+        }
+        break;
+    case OPT_QUIT:
+        tcout << fgNormal;
+        iret = ERROR_QUIT_COMMAND_EXECUTED;
+        break;
+
+    default:
+        EnterCriticalSection( &cs );
+        tcout << fgErr << "Unrecognized command: '" << args.OptionText() << "' (use help to get command line help)" << endl ;
+        LeaveCriticalSection( &cs );
+        iret = ERROR_BAD_COMMANDFORMAT;
+        break;
+    }
+
+    LocalFree(argv);
+    free(pszCmdline);
+    return iret;
+}
+
 
 // thread responsible for parsing the commands send by the user.
 unsigned __stdcall CommandPromptThread( void *param )
@@ -1080,283 +1383,22 @@ unsigned __stdcall CommandPromptThread( void *param )
 
     //////////////
     // input loop
-    bool wantsmore = true, printprompt=true;
-    while(wantsmore)
-    {
+    int ret = ERROR_BASIC_COMMAND_EXECUTED;
+    while(1) {
         // wait for the "make" thread to end if it is running
         if(hMakeThread)
             WaitForSingleObject(hMakeThread, INFINITE);
 
-        if( printprompt )
+        if( ret != ERROR_PROCLAUNCH_COMMAND_EXECUTED )
             print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING);
-        printprompt = true;
 
-        // Read a command from the user
-#define DUMMYCMD        _T("dummy -")
-        TCHAR cmdline[PROMPT_MAX_INPUT_LENGTH+_countof(DUMMYCMD)] = DUMMYCMD; // add a dummy command name and the option delimiter
-        tcin.getline(&cmdline[_countof(DUMMYCMD)-1], PROMPT_MAX_INPUT_LENGTH);
-        if( tcin.fail() ){
+        TCHAR cmdline[PROMPT_MAX_INPUT_LENGTH];
+        tcin.getline(cmdline, _countof(cmdline));
+        if( tcin.fail() )
             tcin.clear();
-        }
-
-        // Convert the command line into an argv table 
-        int argc;
-        PTSTR *argv;
-        argv = CommandLineToArgv(cmdline, &argc);
-        // Parse the command line
-        CSimpleOpt args(argc, argv, g_rgPromptOptions, true);
-
-        args.Next(); // get the first command recognized
-        if (args.LastError() != SO_SUCCESS) {
-            // Set the beginning of the error message
-            TCHAR *pszError = _T("Unknown error");
-            switch (args.LastError()) {
-            case SO_OPT_INVALID:
-                pszError = _T("Unrecognized command");
-                break;
-            case SO_OPT_MULTIPLE:
-                pszError = _T("This command takes multiple arguments");
-                break;
-            case SO_ARG_INVALID:
-                pszError = _T("This command does not accept argument");
-                break;
-            case SO_ARG_INVALID_TYPE:
-                pszError = _T("Invalid argument format");
-                break;
-            case SO_ARG_MISSING:
-                pszError = _T("Required argument is missing");
-                break;
-            }
-            // set the end of error message
-            EnterCriticalSection( &cs );
-                LPCTSTR optiontext = args.OptionText();
-                // remove the extra '-' that we have appened before the command name
-                if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
-                    optiontext++;
-                // don't show error message for the empty command
-                if(  optiontext[0] != 0 ) {
-                    tcout << fgErr << pszError << ": '" << optiontext << "' (use help to get command line help)"  << endl;
-                }
-            LeaveCriticalSection( &cs );
-            continue;
-        }
-
-        switch( args.OptionId() ) {
-        case OPT_USAGE:
-            EnterCriticalSection( &cs );
-                tcout << fgNormal;
-                ShowUsage();
-            LeaveCriticalSection( &cs ); 
+        ret = ExecuteCommand(cmdline);
+        if ( ret == ERROR_QUIT_COMMAND_EXECUTED )
             break;
-        case OPT_HELP:
-            EnterCriticalSection( &cs );
-            tcout << fgNormal << "The following commands are available:" << endl
-                 << "Latex related commands:" << endl
-                 << "  b[ibtex]           build the bibliography file using bibtex" << endl
-                 << "  c[compile]         compile the .tex file using the precompiled preamble" << endl
-                 << "  d[vips]            DVI -> PS conversion" << endl
-                 << "  dvipspdf           DVI -> PS -> PDF conversion" << endl
-                 << "  dvipng             DVI -> PNG conversion" << endl
-                 << "  f[ullcompile]      compile the preamble and the .tex file" << endl
-                 << "  mi|makeindex       build the index file using makeindex" << endl
-                 << "  p[s2pdf]           PS -> PDF conversion" << endl
-                 << "  v[iew]             view the output file (DVI or PDF depending on ini value)" << endl
-                 << "  vi|viewdvi         view the DVI file" << endl 
-                 << "  vs|viewps          view the PS file" << endl 
-                 << "  vf|viewpdf         view the PDF file" << endl 
-                 << "File managment commands:" << endl
-                 << "  cu|cleanup         cleanup the files in the auxiliaray directory" << endl
-                 << "  e[dit]             edit the .tex file" << endl
-                 << "  l[oad] [file.tex]  change the active tex document" << endl
-                 << "  pwd                print working document/directory" << endl
-                 << "  s[pawn] [file.tex] spawn a new latexdaemon process" << endl
-                 << "  x|explore          explore the folder containing the .tex file" << endl
-                 << "Others:" << endl
-                 << "  h[elp]             show this message" << endl
-                 << "  q[uit]             quit the program" << endl
-                 << "  r[un] COMMANDLINE  execute a shell command" << endl
-                 << "  u[sage]            show the help on command line parameters usage" << endl << endl
-                 << "Options can be configured using the following commands:" << endl
-                 << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
-                 << "          job to be executed after latex compilation" << endl
-                 << "  autodep={yes|no}   automatic dependency detection" << endl
-                 << "  aux-directory=DIR" << endl
-                 << "          Use DIR as the directory to write auxiliary files to."<<endl
-                 << "  custom=\"COMMAND LINE\"" << endl
-                 << "          custom command to execute when afterjob is set to custom" << endl
-                 << "  filter={highlight|raw|err|warn|err+warn}" << endl
-                 << "          error messages filter mode (highlight by default)." << endl
-                 << "  gsview={yes|no}" << endl
-                 << "          view PS/PDF with GSView and send auto-refresh notifications" << endl
-                 << "  ini=inifile        initial format file (default to latex)" << endl
-                 << "  preamble={yes|no}  preamble precompilation (requires a file reload)" << endl
-                 << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
-            LeaveCriticalSection( &cs ); 
-            break;
-        case OPT_INI:          ExecuteOptionIni(args.OptionArg());              break;
-        case OPT_PREAMBLE:   ExecuteOptionPreamble(args.OptionArg());         break;
-        case OPT_AFTERJOB:   ExecuteOptionAfterJob(args.OptionArg());         break;
-        case OPT_CUSTOM:     ExecuteOptionCustom(args.OptionArg());         break;
-        case OPT_WATCH:      ExecuteOptionWatch(args.OptionArg());            break;
-        case OPT_AUXDIR:     ExecuteOptionAuxDirectory(args.OptionArg());            break;
-        case OPT_AUTODEP:    ExecuteOptionAutoDependencies(args.OptionArg()); break;
-        case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
-        case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
-        case OPT_BIBTEX:     bibtex(mainlauncher);      break;
-        case OPT_PS2PDF:     ps2pdf(mainlauncher);      break;
-        case OPT_EDIT:       edit();        break;
-        case OPT_CLEANUP:    cleanup();     break;
-        case OPT_VIEWOUTPUT: view();        break;
-        case OPT_VIEWDVI:    view_dvi();    break;
-        case OPT_VIEWPS:     view_ps();     break;
-        case OPT_VIEWPDF:    view_pdf();    break;
-        case OPT_OPENFOLDER: openfolder();  break;
-        case OPT_PWD:        pwd();         break;
-        
-        case OPT_MAKEINDEX:
-            {
-                tstring opt;
-                for(int i=2;i<argc;i++)
-                    opt+=tstring(argv[i]) + _T(" ");
-                makeindex(mainlauncher, opt);
-            }
-            break;
-
-        case OPT_RUN:
-            {
-                tstring cmd;
-                for(int i=2;i<argc;i++)
-                    cmd+=tstring(argv[i]) + _T(" ");
-                shell(mainlauncher, cmd);
-            }
-            break;
-        case OPT_DVIPS:
-            {
-                tstring opt;
-                for(int i=2;i<argc;i++)
-                    opt+=tstring(argv[i]) + _T(" ");
-                dvips(mainlauncher, opt);
-            }
-            break;
-        case OPT_DVIPSPDF:
-            {
-                tstring opt;
-                for(int i=2;i<argc;i++)
-                    opt+=tstring(argv[i]) + _T(" ");
-                dvipspdf(mainlauncher, opt);
-            }
-            break;
-
-        case OPT_DVIPNG:
-            {
-                tstring opt;
-                for(int i=2;i<argc;i++)
-                    opt+=tstring(argv[i]) + _T(" ");
-                dvipng(mainlauncher, opt);
-            }
-            break;
-
-        case OPT_SPAWN: {
-            // parse the filenames parameters (tex file name and dependencies)
-            CSimpleGlob nglob;
-            if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
-                tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-            }
-            else
-                spawn(argc-1, &argv[1]);
-            break;
-        }
-
-        case OPT_LOAD:
-            {
-                // parse the filenames parameters (tex file name and dependencies)
-                CSimpleGlob nglob;
-                while (args.Next()); // get the filename passed in parameters
-                if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
-                    tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-                }
-                else {
-                    // if no argument is specified then we show a dialogbox to the user to let him select a file
-                    if( args.FileCount() == 0 ){
-                        OPENFILENAME ofn;       // common dialog box structure
-                        TCHAR szFile[260];       // buffer for file name
-
-                        // Initialize OPENFILENAME
-                        ZeroMemory(&ofn, sizeof(ofn));
-                        ofn.lStructSize = sizeof(ofn);
-                        ofn.hwndOwner = GetConsoleHWND();
-                        ofn.lpstrFile = szFile;
-                        //
-                        // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
-                        // use the contents of szFile to initialize itself.
-                        //
-                        ofn.lpstrFile[0] = '\0';
-                        ofn.nMaxFile = sizeof(szFile);
-                        ofn.lpstrFilter = _T("All(*.*)\0*.*\0Tex/Latex file (*.tex)\0*.tex\0");
-                        ofn.nFilterIndex = 2;
-                        ofn.lpstrFileTitle = NULL;
-                        ofn.nMaxFileTitle = 0;
-                        ofn.lpstrInitialDir = NULL;
-                        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-                        // Display the Open dialog box. 
-
-                        if (GetOpenFileName(&ofn)==TRUE) {
-                            if (SG_SUCCESS != nglob.Add(szFile) ) {
-                                tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n" << fgNormal) ;
-                                goto err_load;
-                            }
-                        }
-                        else {
-                            tcout << fgErr << _T("No input file specified!\n" << fgNormal);
-                            goto err_load;
-                        }
-
-                    }
-
-                    // Load the file
-                    if( loadfile(nglob, Rest) == 0 ) {
-                        // Restart the watching thread
-                        if( Watch )
-                            RestartWatchingThread();
-                    }
-                }
-            }
-err_load:
-
-            break;
-
-        case OPT_COMPILE:
-            {
-                bool started = RestartMakeThread(Compile);
-                // wait for the "make" thread to end
-                if( started )
-                    WaitForSingleObject(hMakeThread, INFINITE);
-                printprompt = !started;
-            }
-            break;
-        case OPT_FULLCOMPILE:
-            {
-                bool started = RestartMakeThread(FullCompile);
-                // wait for the "make" thread to end
-                if( started )
-                    WaitForSingleObject(hMakeThread, INFINITE);
-                printprompt = !started;
-            }
-            break;
-        case OPT_QUIT:
-            wantsmore = false;
-            tcout << fgNormal;
-            break;		
-
-        default:
-            EnterCriticalSection( &cs );
-            tcout << fgErr << "Unrecognized command: '" << args.OptionText() << "' (use help to get command line help)" << endl ;
-            LeaveCriticalSection( &cs );
-            printprompt = true;
-            break;
-        }
-
     }
 
     // Preparing to exit the program: ask the children thread to terminate
@@ -1429,6 +1471,52 @@ BOOL WINAPI CtrlBreakHandlerRoutine(DWORD dwCtrlType)
         return false;
 }
 
+// Execute a command specified by an object CSimpleOpt
+// return true if the command is executed.
+//        false if the command is badly formatted or if the command does not exist
+int ExecuteCommand(CSimpleOpt &args)
+{
+    if (args.LastError() != SO_SUCCESS) {
+        TCHAR * pszError = _T("Unknown error");
+        switch (args.LastError()) {
+        case SO_OPT_INVALID:
+            pszError = _T("Unrecognized option");
+            break;
+        case SO_OPT_MULTIPLE:
+            pszError = _T("Option matched multiple strings");
+            break;case SO_ARG_INVALID:
+            pszError = _T("Option does not accept argument");
+            break;
+        case SO_ARG_INVALID_TYPE:
+            pszError = _T("Invalid argument format");
+            break;
+        case SO_ARG_MISSING:
+            pszError = _T("Required argument is missing");
+            break;
+        }
+        _tprintf(
+            _T("%s: '%s' (use --help to get command line help)\n"),
+            pszError, args.OptionText());
+        return false;
+    }
+
+    switch( args.OptionId() ) {
+        case OPT_USAGE:         ShowUsage();                                        break;
+        case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
+        case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
+        case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
+        case OPT_AUXDIR:	      ExecuteOptionAuxDirectory(args.OptionArg());        break;
+        case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
+        case OPT_FORCE:         ExecuteOptionForce(args.OptionArg());               break;
+        case OPT_GSVIEW:        ExecuteOptionGsview(_T(""));                        break;
+        case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
+        case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
+        case OPT_CUSTOM:        ExecuteOptionCustom(args.OptionArg());              break;
+        case OPT_CUSTOMTEXARG:  ExecuteOptionCustomTexArg(args.OptionArg());        break;
+        default:                return false;
+    }
+    return true;
+}
 
 int _tmain(int argc, TCHAR *argv[])
 {
@@ -1471,53 +1559,12 @@ int _tmain(int argc, TCHAR *argv[])
     hEvtDependenciesChanged = CreateEvent(NULL,TRUE,FALSE,NULL);
     // initialize the critical section used to sequentialized console output
     InitializeCriticalSection(&cs);
-
-
-    // default options, can be overwritten by command line parameters
-    JOB initialjob = Rest;
-
-    unsigned int uiFlags = 0;    
+    
+    unsigned int uiFlags = 0;
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
-        if (args.LastError() != SO_SUCCESS) {
-            TCHAR * pszError = _T("Unknown error");
-            switch (args.LastError()) {
-            case SO_OPT_INVALID:
-                pszError = _T("Unrecognized option");
-                break;
-            case SO_OPT_MULTIPLE:
-                pszError = _T("Option matched multiple strings");
-                break;case SO_ARG_INVALID:
-                pszError = _T("Option does not accept argument");
-                break;
-            case SO_ARG_INVALID_TYPE:
-                pszError = _T("Invalid argument format");
-                break;
-            case SO_ARG_MISSING:
-                pszError = _T("Required argument is missing");
-                break;
-            }
-            _tprintf(
-                _T("%s: '%s' (use --help to get command line help)\n"),
-                pszError, args.OptionText());
-            continue;
-        }
-
-        switch( args.OptionId() ) {
-            case OPT_USAGE:         ShowUsage();                                        goto exit;
-            case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
-            case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
-            case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
-            case OPT_AUXDIR:	      ExecuteOptionAuxDirectory(args.OptionArg());        break;
-            case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
-            case OPT_FORCE:         ExecuteOptionForce(args.OptionArg(),initialjob);    break;
-            case OPT_GSVIEW:        ExecuteOptionGsview(_T(""));                        break;
-            case OPT_PREAMBLE:      ExecuteOptionPreamble(args.OptionArg());            break;
-            case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
-            case OPT_CUSTOM:        ExecuteOptionCustom(args.OptionArg());              break;
-            default:                break;
-        }
-        uiFlags |= (unsigned int) args.OptionId();
+        if( ExecuteCommand(args) )
+            uiFlags |= (unsigned int) args.OptionId();
     }
 
     int ret = -1;    
@@ -1685,6 +1732,23 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     auto_preamb_deps.clear();
     static_deps.clear();
 
+    tstring preffile = texdir+_T("\\")+texbasename+PREF_EXT;
+    if( FileExists(preffile.c_str()) ) {
+        tcout << "-Reading preference file " << texbasename << PREF_EXT << "\n";
+        FILE *fp = _tfopen(preffile.c_str(), _T("r"));
+        if( !fp )
+            tcout << fgErr << "Cannot open preference file " << preffile <<".\n" << fgNormal;
+        else {
+            TCHAR buff[PROMPT_MAX_INPUT_LENGTH];
+            while (!feof(fp) ) {
+                int iret = _ftscanf(fp, _T("%[^\n]\n"),buff);
+                if( iret == 1 && buff[0] != 10 && buff[0] != 13 && buff[0] && _tcsncmp(buff, _T("//"), 2) != 0 )
+                    ExecuteCommand(buff);
+            }
+            fclose(fp);
+        }
+    }
+
 
     if( depglob.FileCount()>1 ) 
         tcout << "-Dependencies manually added:\n";
@@ -1794,6 +1858,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
         }
     }
 
+    FileLoaded = true;
 
     // Perform the job that needs to be done
     if( job != Rest ) {
@@ -1802,8 +1867,6 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
 
         make(mainlauncher, job);
     }
-
-    FileLoaded = true;
 
     return 0;
 }
@@ -2076,6 +2139,7 @@ _T("{\\catcode`\\^^M=\\active")
         tstring cmdline = tstring(_T("pdftex"))
             + auxopt
             + (texinifile.compare(_T("pdflatex"))==0 ? pdftexoptions : texoptions)
+            + (customtexargs.empty() ? _T("") : customtexargs + _T(" "))
             + _T(" -job-name=") + preamble_format_basename +
             + _T(" -ini \"&") + texinifile + _T("\"")
             + _T(" \"")
@@ -2143,7 +2207,8 @@ DWORD compile(AbortableProcessLauncher &launcher)
     // Create the command line adding some latex code before and after the .tex file if necessary
     tstring cmdline = texengine
                         + auxopt
-                        + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions);
+                        + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions)
+                        + (customtexargs.empty() ? _T("") : customtexargs + _T(" "));
     if( formatfile != _T("") )
         cmdline += _T(" \"&")+formatfile+_T("\"");
     if( latex_pre == _T("") ) // && latex_post == _T("") ) 
