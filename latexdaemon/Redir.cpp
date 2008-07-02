@@ -166,26 +166,32 @@ BOOL CRedirector::Open(LPTSTR pszCmdLine)
 
 void CRedirector::Close()
 {
-	if (m_hThread != NULL) {
-		// this function might be called from redir thread
-		if (::GetCurrentThreadId() != m_dwThreadId) {
-			_ASSERT(m_hEvtStop != NULL);
-			::SetEvent(m_hEvtStop);
-			//::WaitForSingleObject(m_hThread, INFINITE);
-			if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT) {
-				tcerr << _T("[CONSOLE REDIRECTION] The redir thread is dead\r\n");
-				::TerminateThread(m_hThread, -2);
-			}
-		}
+    if (m_hThread != NULL) {
+        // this function might be called from redir thread
+        if (::GetCurrentThreadId() != m_dwThreadId) {
+            _ASSERT(m_hEvtStop != NULL);
+            ::SetEvent(m_hEvtStop);
+            //The process may be terminated (causing CRedirector::Close() to be called) but
+            //the thread that is responsible of processing the stdoutput might not have finished 
+            //to proceed. 
+            // We cannot kill it because this thread needs to release a mutex when it finishes.
+            // So we just wait for it to finish...
+            ::WaitForSingleObject(m_hThread, INFINITE);
 
-		DestroyHandle(m_hThread);
-	}
+            /*if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT) {
+                ::TerminateThread(m_hThread, -2);
+                tcerr << _T("[CONSOLE REDIRECTION] The standard output filter has been interrupted\r\n");
+            }*/
+        }
 
-	DestroyHandle(m_hEvtStop);
-	DestroyHandle(m_hChildProcess);
-	DestroyHandle(m_hStdinWrite);
-	DestroyHandle(m_hStdoutRead);
-	m_dwThreadId = 0;
+        DestroyHandle(m_hThread);
+    }
+
+    DestroyHandle(m_hEvtStop);
+    DestroyHandle(m_hChildProcess);
+    DestroyHandle(m_hStdinWrite);
+    DestroyHandle(m_hStdoutRead);
+    m_dwThreadId = 0;
 }
 
 // write data to the child's stdin
@@ -366,6 +372,11 @@ unsigned __stdcall CRedirector::OutputThread(void *pvThreadParam)
 			    nRet = 1;	// cancelled
 			    break;
 		    }
+/*            else
+            {
+                _ASSERT(0);
+                break;
+            }*/
 	    }
   LeaveCriticalSection(pRedir->m_pcs);
 
