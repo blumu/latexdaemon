@@ -1513,7 +1513,8 @@ int ExecuteCommand(CSimpleOpt &args)
         case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
         case OPT_CUSTOM:        ExecuteOptionCustom(args.OptionArg());              break;
         case OPT_CUSTOMTEXARG:  ExecuteOptionCustomTexArg(args.OptionArg());        break;
-        default:                return false;
+        default:                
+            return false;
     }
     return true;
 }
@@ -1572,7 +1573,7 @@ int _tmain(int argc, TCHAR *argv[])
         tcout << fgWarning << _T("No input file specified.\n") << fgNormal;
     }
     else {
-        CSimpleGlob nglob(uiFlags);
+        CSimpleGlob nglob(SG_GLOB_ONLYFILE);
         if (SG_SUCCESS != nglob.Add(args.FileCount(), args.Files()) ) {
             tcout << fgErr << _T("Error while globbing files! Make sure that the given path is correct.\n") << fgNormal ;
             goto exit;
