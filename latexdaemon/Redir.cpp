@@ -342,46 +342,46 @@ void CRedirector::DestroyHandle(HANDLE& rhObject)
 // thread to receive output of the child process
 unsigned __stdcall CRedirector::OutputThread(void *pvThreadParam)
 {
-	HANDLE aHandles[2];
-	int nRet;
-	CRedirector* pRedir = (CRedirector*) pvThreadParam;
+    HANDLE aHandles[2];
+    int nRet;
+    CRedirector* pRedir = (CRedirector*) pvThreadParam;
 
-	_ASSERT(pRedir != NULL);
-	aHandles[0] = pRedir->m_hChildProcess;
-	aHandles[1] = pRedir->m_hEvtStop;
+    _ASSERT(pRedir != NULL);
+    aHandles[0] = pRedir->m_hChildProcess;
+    aHandles[1] = pRedir->m_hEvtStop;
 
-  EnterCriticalSection(pRedir->m_pcs);
-	    for (;;) {
-		    // redirect stdout till there's no more data.
-		    nRet = pRedir->RedirectStdout();
-		    if (nRet <= 0)
-			    break;
+    EnterCriticalSection(pRedir->m_pcs);
+        for (;;) {
+            // redirect stdout till there's no more data.
+            nRet = pRedir->RedirectStdout();
+            if (nRet <= 0)
+                break;
 
-		    // check if the child process has terminated.
-		    DWORD dwRc = ::WaitForMultipleObjects(
-			    2, aHandles, FALSE, pRedir->m_dwWaitTime);
-		    if (WAIT_OBJECT_0 == dwRc)		// the child process ended
-		    {
-			    nRet = pRedir->RedirectStdout();
-			    if (nRet > 0)
-				    nRet = 0;
-			    break;
-		    }
-		    if (WAIT_OBJECT_0+1 == dwRc)	// m_hEvtStop was signalled
-		    {
-			    nRet = 1;	// cancelled
-			    break;
-		    }
+            // check if the child process has terminated.
+            DWORD dwRc = ::WaitForMultipleObjects(
+                2, aHandles, FALSE, pRedir->m_dwWaitTime);
+            if (WAIT_OBJECT_0 == dwRc)		// the child process ended
+            {
+                nRet = pRedir->RedirectStdout();
+                if (nRet > 0)
+                    nRet = 0;
+                break;
+            }
+            if (WAIT_OBJECT_0+1 == dwRc)	// m_hEvtStop was signalled
+            {
+                nRet = 1;	// cancelled
+                break;
+            }
 /*            else
             {
                 _ASSERT(0);
                 break;
             }*/
-	    }
-  LeaveCriticalSection(pRedir->m_pcs);
+        }
+    LeaveCriticalSection(pRedir->m_pcs);
 
-	// close handles
-	//pRedir->Close(); // Commented out by WB (it causes problems)
+    // close handles
+    //pRedir->Close(); // Commented out by WB (it causes problems)
   _endthreadex( nRet );
-	return nRet;
+    return nRet;
 }

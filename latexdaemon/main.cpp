@@ -1692,7 +1692,26 @@ bool FindInternalPreamble(DWORD *preamble_len=NULL)
     return false;
 }
 
+// skip spaces in a string
+PCTSTR str_skip_spaces (PCTSTR *str) {
+    while(**str==_T(' ')) (*str)++;
+    return *str;
+}
 
+// Taken from http://code.google.com/p/baseutils/source/browse/trunk/str_util.c
+// If the string at <*strp> starts with string at <expect>, skip <*strp> past
+// it and return TRUE; otherwise return FALSE. */
+bool str_skip(PCTSTR *strp, PCTSTR expect)
+{
+   size_t len = _tcslen(expect);
+   if (0 == _tcsncmp(*strp, expect, len)) {
+       *strp += len;
+       return true;
+   }
+   else {
+       return false;
+   }
+}
 
 // Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
 int loadfile( CSimpleGlob &depglob, JOB initialjob )
@@ -1733,7 +1752,9 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     auto_preamb_deps.clear();
     static_deps.clear();
 
-    tstring preffile = texdir+_T("\\")+texbasename+PREF_EXT;
+    // If there is a preference file next to the .tex file
+    // then execute it
+    tstring preffile = texdir+texbasename+PREF_EXT;
     if( FileExists(preffile.c_str()) ) {
         tcout << "-Reading preference file " << texbasename << PREF_EXT << "\n";
         FILE *fp = _tfopen(preffile.c_str(), _T("r"));
@@ -1748,6 +1769,41 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
             }
             fclose(fp);
         }
+    }
+    // Otherwise check if the header of the tex file contains daemon preferences
+    // insterted with the following format:
+    // % Daemon> command
+    else {
+        FILE *fp = _tfopen(texfullpath.c_str(), _T("r"));
+        if( !fp )
+            tcout << fgErr << "Cannot open .tex file " << preffile <<".\n" << fgNormal;
+        else {
+            TCHAR buff[PROMPT_MAX_INPUT_LENGTH];
+            PCTSTR cur;
+            while (!feof(fp)) {
+                // read an entire line from the file
+                int iret = _ftscanf(fp, _T("%[^\n]\n"),buff);
+                if( iret != 1 )
+                    break;
+                
+                cur = buff;
+                // skip spaces
+                str_skip_spaces(&cur);
+                if( *cur == 10 || *cur == 13 || *cur == 0 )
+                    continue;
+                // stop if we reach something that is not a TeX commentary
+                if ( *cur != _T('%'))
+                    break;
+                cur++;
+                str_skip_spaces(&cur);
+                if( str_skip(&cur, _T("Daemon>")) ) {
+                    str_skip_spaces(&cur);
+                    ExecuteCommand(cur);
+                }
+            }
+            fclose(fp);
+        }
+
     }
 
 
