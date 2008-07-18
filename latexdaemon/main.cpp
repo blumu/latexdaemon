@@ -153,7 +153,7 @@ int dvipspdf(AbortableProcessLauncher &launcher, tstring opt);
 int dvipng(AbortableProcessLauncher &launcher, tstring opt);
 int custom(AbortableProcessLauncher &launcher, tstring opt);
 int shell(AbortableProcessLauncher &launcher, tstring cmdline);
-int ps2pdf(AbortableProcessLauncher &launcher);
+int ps2pdf(AbortableProcessLauncher &launcher, tstring opt);
 int bibtex(AbortableProcessLauncher &launcher);
 int makeindex(AbortableProcessLauncher &launcher, tstring opt);
 DWORD make(AbortableProcessLauncher &launcher, JOB makejob);
@@ -1215,7 +1215,6 @@ int ExecuteCommand(tstring command)
     case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
     case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
     case OPT_BIBTEX:     bibtex(mainlauncher);      break;
-    case OPT_PS2PDF:     ps2pdf(mainlauncher);      break;
     case OPT_EDIT:       edit();        break;
     case OPT_CLEANUP:    cleanup();     break;
     case OPT_VIEWOUTPUT: view();        break;
@@ -1265,6 +1264,14 @@ int ExecuteCommand(tstring command)
             for(int i=2;i<argc;i++)
                 opt+=tstring(argv[i]) + _T(" ");
             dvipng(mainlauncher, opt);
+        }
+        break;
+    case OPT_PS2PDF:
+        {
+            tstring opt;
+            for(int i=2;i<argc;i++)
+                opt+=tstring(argv[i]) + _T(" ");
+            ps2pdf(mainlauncher, opt);
         }
         break;
 
@@ -2525,14 +2532,14 @@ int openfolder()
 
 
 // Convert the postscript file to pdf
-int ps2pdf(AbortableProcessLauncher &launcher)
+int ps2pdf(AbortableProcessLauncher &launcher, tstring opt)
 {
     if( !CheckFileLoaded() )
         return 0;
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
-    tstring cmdline = tstring(_T("ps2pdf "))+texbasename+_T(".ps");
+    tstring cmdline = tstring(_T("ps2pdf "))+ opt + _T(" ") + texbasename+_T(".ps");
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
     LeaveCriticalSection( &cs ); 
     return launcher.launch_and_wait(cmdline.c_str());
@@ -2561,7 +2568,7 @@ int dvipspdf(AbortableProcessLauncher &launcher, tstring opt)
     EnterCriticalSection( &cs );
     tcout << fgMsg << _T("-- Converting ") << texbasename << _T(".dvi to PDF...\n");
 
-    tstring cmdline = tstring(_T("dvips "))+texbasename+_T(".dvi ") + opt + _T("-o ")+texbasename+_T(".ps");
+    tstring cmdline = tstring(_T("dvips "))+ opt + _T(" ") + texbasename+_T(".dvi ")  + _T("-o ")+texbasename+_T(".ps");
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
     int ret = launcher.launch_and_wait(cmdline.c_str());
     if(ret == 0 ) {
