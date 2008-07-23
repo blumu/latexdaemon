@@ -1,11 +1,34 @@
-<p class="date"> 30 June 2008 - Version 0.10 Build 44 </p>
+<p class="date"> 23 June 2008 - Version 0.10 Build 43 </p>
 <ul>
-<li>New: It is now possible to create a local configuration file (with the .daemon extension) that will be read automatically
-by the daemon upon loading of the corresponding .tex file. Each line of the file must contain a valid LatexDaemon command. Comments
-are prefixed with //.
+<li>New: It is now possible to create a local configuration file (with the .daemon extension) that is automatically read by the daemon upon loading of the corresponding .tex file. Each line of the file must contain a valid LatexDaemon command. Comments are prefixed with two slash symbols: //.</li>
+<li>
+New: It is now possible to add commands in the .tex file to be executed upon
+loading by latexdemon. Each command must be prefixed with '%Daemon>' and must
+occur before any latex command. For instance:
+<pre>
+%Daemon> ini=latex
+%Daemon> afterjob=dvipspdf
+%Daemon> filter=err+warn
+%Daemon> custom_args=-synctex=-1
+\documentclass{article}
+...
+</pre>
 </li>
-<li>A few bugs fixed</li>
+<li>New: custom parameters can be passed to latex using the variable 'custom_args'
+</li>
+<li>New: custom parameters can be specified to the ps2pdf command</li>
+<li>New 'cleanup' command that deletes  files from the auxiliary files directory</li>
+<li>Bug fixed: holding the scrollbar in the command prompt window (in order to pause
+the scrolling) for too long could cause a deadlock.</li>
+<li>Bug fixed: the file passed in parameter was ignored if the option -filter-...
+was used</li>
+<li>Bug fixed in digest computation (when specified length is smaller than the file size)</li>
+<li>Bug fixed: The dependency did not work properly in internal preamble mode</li>
+<li>Processes started from the main thread can now also be killed with CTRL+C (before
+this would kill the entire daemon process).</li>
+<li>Few other bugs fixed</li>
 </ul>
+
 <p class="date"> 18 June 2008 - Version 0.10 Build 42 </p>
 <ul>
 <li>New: It is not required anymore to move the preamble to a separate file. The preamble can now be extracted automatically from the main .tex file. (This features uses TeX code from the 'mylatex' package.)</li>
