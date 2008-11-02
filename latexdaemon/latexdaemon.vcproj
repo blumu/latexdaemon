@@ -135,6 +135,7 @@
 				Name="VCLinkerTool"
 				AdditionalDependencies="shlwapi.lib"
 				LinkIncremental="2"
+				GenerateManifest="true"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				OptimizeReferences="2"
@@ -149,6 +150,7 @@
 			<Tool
 				Name="VCManifestTool"
 				EmbedManifest="true"
+				UpdateFileHashes="true"
 			/>
 			<Tool
 				Name="VCXDCMakeTool"

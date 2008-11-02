@@ -2930,7 +2930,7 @@ unsigned __stdcall WatchingThread( void* param )
                         vector<CFilename>::iterator it = find(deps.begin(),deps.end(), modifiedfile);
                         if(it != deps.end() ) {
                             size_t i = it - deps.begin();
-                            // if the main tex file has changed and the preamble is internal then check whether the checksum of the preamble has changed
+                            // if it is the main tex file and if the preamble is internal then check whether the checksum of the preamble has changed
                             if( i == 0 && PreambleType==Internal && dg_new.DigestFile(modifiedfile, preamble_size) && (dg_preamble!=dg_new)) {
                                 if(FindInternalPreamble(&preamble_size))
                                     dg_preamble.DigestFile(modifiedfile, preamble_size);

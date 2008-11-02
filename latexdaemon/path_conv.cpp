@@ -132,7 +132,11 @@ PTSTR Rel2Abs(PCTSTR pcRelPath, PTSTR pcAbsPath, size_t sizeInBytes, PCTSTR pcCu
 		tmpQueueRelPath.push(sTmp);
 		sTmp = _tcstok_s(NULL, path_separator, &nextToken);
 	}
-
+///////
+  // added by William Blum: handle the case where the currdir is a network path of the form \\MACHINE\...
+  if(acTmpCurrDir[0]=='\\' && acTmpCurrDir[1]=='\\')
+    tmpStackCurrPath.push(_T("\\")); // push an extra '\' to the stack, the second '\' will be inserted when the path is recomposed at the end of the function
+/////
 	sTmp = _tcstok_s(acTmpCurrDir,path_separator, &nextToken);
 	while(sTmp)
 	{
