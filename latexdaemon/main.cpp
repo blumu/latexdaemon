@@ -491,7 +491,7 @@ void ShowUsage() {
          << " --aux-directory=DIR" << endl 
          << "   Use DIR as the directory to write auxiliary files to."<<endl<<endl
          << " --watch={yes|no}" << endl 
-         << "   If set to yes then it will run the necessary compilation and then exit without watching for file changes."<<endl<<endl
+         << "   If set to 'no' then it compiles the document and exits immediately without watching for file changes."<<endl<<endl
          << " --force {compile|fullcompile}" << endl
          << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
          << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
