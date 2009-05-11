@@ -1929,7 +1929,10 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
         if( job == FullCompile )
             tcout << fgMsg << "  Let's recreate the format file and then recompile " << texbasename << ".tex.\n";
 
-        make(mainlauncher, job);
+        DWORD errcode = make(mainlauncher, job);
+
+        // Refresh the list of dependencies
+        RefreshDependencies(job == FullCompile, errcode == 0); // add deps if there were error in the compilation, replace them if there were no error during compilation.
     }
 
     return 0;
@@ -2939,12 +2942,12 @@ unsigned __stdcall WatchingThread( void* param )
 
                             } 
                             else if ( dg_new.DigestFile(modifiedfile) && (dg_deps[i]!=dg_new) ) {
-	                            dg_deps[i] = dg_new;
-	                            print_if_possible(fgDepFile, tstring(_T("+ \"")) + modifiedfile.Relative(texdir) + _T("\" changed (dependency file).\n") );
-	                            makejob = max(Compile, makejob);
+                                dg_deps[i] = dg_new;
+                                print_if_possible(fgDepFile, tstring(_T("+ \"")) + modifiedfile.Relative(texdir) + _T("\" changed (dependency file).\n") );
+                                makejob = max(Compile, makejob);
                             }
                             else
-	                            print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" modified but digest preserved\n") );
+                                print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" modified but digest preserved\n") );
                         }
                         else if ( PreambleType != None ) {
                             // is it a dependency of the preamble?
