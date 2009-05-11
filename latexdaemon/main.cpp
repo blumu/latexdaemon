@@ -99,8 +99,8 @@ private:
 #define DEFAULTPREAMBLE2_FILENAME       DEFAULTPREAMBLE2_BASENAME _T(".tex")
 #define DEFAULTPREAMBLE1_EXT            _T("pre")
 
-#define PROMPT_STRING                   _T("dameon>")
-#define PROMPT_STRING_WATCH             _T("dameon@>")
+#define PROMPT_STRING                   _T("daemon>")
+#define PROMPT_STRING_WATCH             _T("daemon@>")
 
 
 // Maximal length of an input command line at the prompt
