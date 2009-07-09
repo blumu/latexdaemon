@@ -20,5 +20,5 @@
 #define APP_TITLE			 "LatexDaemon"
 #define BUILD_DATE			__DATE__
 #define COMPANY_NAME		"William Blum"
-#define COPYRIGHT			  "Copyright © William Blum 2006-2008"
+#define COPYRIGHT			  "Copyright © William Blum 2006-2009"
 

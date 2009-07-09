@@ -127,7 +127,7 @@ enum PREAMBLETYPE { None, /// no preamble
 // TeX code that changes the catcode for the symbol @
 //#define  TEX_MAKEATLETTER      _T("\\edef\\TheAtCode{\\the\\catcode`\\@} \\catcode`\\@=11 ")
 //#define  TEX_MAKEATOTHER       _T(" \\catcode`\\@=\\TheAtCode\\relax")
-#define  TEX_MAKEATLETTER      _T(" \\makeatletter ")
+#define  TEX_MAKEATLETTER      _T("\\makeatletter ")
 #define  TEX_MAKEATOTHER       _T(" \\makeatother ")
 
 
