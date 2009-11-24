@@ -2490,21 +2490,31 @@ int cleanup()
     static PCTSTR clean_ext[] = { _T(".toc"), _T(".tdo"), _T(".out"), _T(".not"), _T(".lot"),
                                   _T(".aux"), _T(".dep"), _T(".idx"), _T(".lof"), _T(".log"),
                                   _T(".bbl"), _T(".blg"), _T(".ind"), _T(".ilg"),
+                                  _T(".gls"), _T(".glo"),
                                   _T(".aux.bak"), _T(".out.bak"), _T(".pdfsync"), _T("-preamble.dep"),
                                   _T("-latex.fmt"), _T("-latex.log"), _T("-pdflatex.fmt"), _T("-pdflatex.log")
     };
 
-    int n = 0;
+    int n = 0, m = 0;
     for(int i=0; i<_countof(clean_ext);i++) {
         tstring file = tstring(auxdir)+_T("\\")+texbasename+clean_ext[i];
         if( FileExists(file.c_str()) ) {
             if(DeleteFile(file.c_str()))
                 n++;
         }
+        if( _tcsicmp(auxdir.c_str(), texdir.c_str() ) != 0 )
+        {
+            file = tstring(texdir)+_T("\\")+texbasename+clean_ext[i];
+            if( FileExists(file.c_str()) ) {
+                if(DeleteFile(file.c_str()))
+                    m++;
+            }
+        }
     }
 
     EnterCriticalSection( &cs );
-    tcout << fgMsg << n << " files deleted from '" << auxdir << "\\'. \n";
+    tcout << fgMsg << n << " file(s) deleted from '" << auxdir << "\\'. \n";
+    tcout << fgMsg << m << " file(s) deleted from '" << texdir << "\\'. \n";
     LeaveCriticalSection( &cs ); 
 
     return 0;
