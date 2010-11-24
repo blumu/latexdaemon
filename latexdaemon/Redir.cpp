@@ -47,10 +47,10 @@ CRedirector::~CRedirector()
 // CRedirector implementation
 //////////////////////////////////////////////////////////////////////
 
-BOOL CRedirector::Open(LPTSTR pszCmdLine)
+BOOL CRedirector::Open(LPTSTR pszCmdLine, LPCTSTR pszStartDir)
 {
     if(!m_predirout) // if no output stream buffer was specified then launch the process with no redirection
-        return LaunchChildNoRedir(pszCmdLine);
+        return LaunchChildNoRedir(pszCmdLine, pszStartDir);
 
     HANDLE hStdoutReadTmp;				// parent stdout read handle
     HANDLE hStdoutWrite, hStderrWrite;	// child stdout write handle
@@ -120,7 +120,7 @@ BOOL CRedirector::Open(LPTSTR pszCmdLine)
         DestroyHandle(hStdinWriteTmp);
 
         // launch the child process
-        if (!LaunchChildRedir(pszCmdLine,
+        if (!LaunchChildRedir(pszCmdLine, pszStartDir,
             hStdoutWrite, hStdinRead, hStderrWrite))
             __leave;
 
@@ -215,7 +215,7 @@ BOOL CRedirector::Printf(LPCTSTR pszFormat, size_t cMaxsize, ...)
 }
 
 // Launch a child without redirection
-BOOL CRedirector::LaunchChildNoRedir(LPTSTR pszCmdLine)
+BOOL CRedirector::LaunchChildNoRedir(LPTSTR pszCmdLine, LPCTSTR pszStartDir)
 {
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
@@ -235,7 +235,7 @@ BOOL CRedirector::LaunchChildNoRedir(LPTSTR pszCmdLine)
         FALSE,          // Set handle inheritance to FALSE
         0,//CREATE_NEW_CONSOLE,              // No creation flags
         NULL,           // Use parent's environment block
-        NULL,           // Use parent's starting directory 
+        pszStartDir,    // starting directory 
         &si,            // Pointer to STARTUPINFO structure
         &pi )           // Pointer to PROCESS_INFORMATION structure
     ) 
@@ -250,6 +250,7 @@ BOOL CRedirector::LaunchChildNoRedir(LPTSTR pszCmdLine)
 
 
 BOOL CRedirector::LaunchChildRedir(LPTSTR pszCmdLine,
+                              LPCTSTR pszStartDir,
                               HANDLE hStdOut,
                               HANDLE hStdIn,
                               HANDLE hStdErr)
@@ -280,7 +281,8 @@ BOOL CRedirector::LaunchChildRedir(LPTSTR pszCmdLine,
         NULL, NULL,
         TRUE,
         0,//CREATE_NEW_CONSOLE,
-        NULL, NULL,
+        NULL,
+        pszStartDir,
         &si,
         &pi))
         return FALSE;

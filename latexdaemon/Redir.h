@@ -43,15 +43,15 @@ protected:
     std::ostream *m_predirout;
 
 
-    BOOL LaunchChildNoRedir(LPTSTR pszCmdLine);
-    BOOL LaunchChildRedir(LPTSTR pszCmdLine, HANDLE hStdOut, HANDLE hStdIn, HANDLE hStdErr);
+    BOOL LaunchChildNoRedir(LPTSTR pszCmdLine, LPCTSTR pszStartDir);
+    BOOL LaunchChildRedir(LPTSTR pszCmdLine, LPCTSTR pszStartDir, HANDLE hStdOut, HANDLE hStdIn, HANDLE hStdErr);
     int RedirectStdout();
     void DestroyHandle(HANDLE& rhObject);
 
     static unsigned __stdcall OutputThread(void *pvThreadParam);
 
 public:
-    BOOL Open(LPTSTR pszCmdLine);
+    BOOL Open(LPTSTR pszCmdLine, LPCTSTR pszStartDir);
     virtual void Close();
     BOOL Printf(LPCTSTR pszFormat, size_t cMaxsize, ...);
     HANDLE GetProcessHandle() {

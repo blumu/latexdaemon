@@ -72,7 +72,7 @@ public:
             CloseHandle(abortevent);
     }
 
-    DWORD launch_and_wait(LPCTSTR cmdline, FILTER filt=Raw);
+    DWORD launch_and_wait(LPCTSTR cmdline, LPCTSTR startDir=NULL, FILTER filt=Raw);
     void abort()
     {
         SetEvent(abortevent);
@@ -417,7 +417,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
 
 
 // Launch an external program and wait for its termination or for an abortion
-DWORD AbortableProcessLauncher::launch_and_wait(LPCTSTR cmdline, FILTER filt)
+DWORD AbortableProcessLauncher::launch_and_wait(LPCTSTR cmdline, LPCTSTR startDir, FILTER filt)
 {
     this->running = true;
 
@@ -428,7 +428,7 @@ DWORD AbortableProcessLauncher::launch_and_wait(LPCTSTR cmdline, FILTER filt)
     ostream *pRedirStream = (filt != Raw) ? &filtstream : NULL;
     CRedirector redir(pRedirStream , &cs);
     if( !pRedirStream ) EnterCriticalSection(&cs);
-    if( redir.Open(szCmdline) ) {
+    if( redir.Open(szCmdline, startDir) ) {
         HANDLE hProc = redir.GetProcessHandle();
 
         // Wait until child process exits or the make process is aborted.
@@ -2217,7 +2217,7 @@ _T("{\\catcode`\\^^M=\\active")
         tcout << fgMsg << "-- Creation of the format file...\n";
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
-        DWORD ret = launcher.launch_and_wait(cmdline.c_str(), Filter);
+        DWORD ret = launcher.launch_and_wait(cmdline.c_str(), NULL, Filter);
         recompilingPreamble = false;
         if( ret )
             return ret;
@@ -2289,7 +2289,7 @@ DWORD compile(AbortableProcessLauncher &launcher)
     LeaveCriticalSection( &cs ); 
 
     // Launch the latex compilation 
-    DWORD ret = launcher.launch_and_wait(cmdline.c_str(), Filter);
+    DWORD ret = launcher.launch_and_wait(cmdline.c_str(), NULL, Filter);
 
     // if the compilation was aborted (because some source file has changed in the meantime) 
     // then do not do any postprocessing
@@ -2636,15 +2636,24 @@ int bibtex(AbortableProcessLauncher &launcher)
     if( !CheckFileLoaded() )
         return 0;
 
+    LPCTSTR pszStartDir = _T("");
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Bibtexing " << texbasename << ".tex...\n";
     tstring cmdline = tstring(_T("bibtex "));
     if( auxdir != _T("") )
-        cmdline += auxdir+_T("\\");
-    cmdline += texbasename;
-    tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    {
+        pszStartDir = auxdir.c_str();
+        cmdline += _T("\"") + texbasename + _T("\"") +_T(" -include-directory ..");
+        tcout << fgMsg << " Running '" << cmdline << "' in directory '" << pszStartDir << "'\n" << fgLatex;
+    }
+    else
+    {
+        pszStartDir = NULL;
+        cmdline += texbasename;
+        tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
+    }    
     LeaveCriticalSection( &cs ); 
-    return launcher.launch_and_wait(cmdline.c_str());
+    return launcher.launch_and_wait(cmdline.c_str(), pszStartDir);
 }
 
 
