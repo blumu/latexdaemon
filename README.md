@@ -21,7 +21,7 @@ of the .tex document is altered.
 Download
 --------
 
-https://code.google.com/p/latexdaemon/downloads/
+https://github.com/blumu/latexdaemon/releases
 
 Home page
 ---------
