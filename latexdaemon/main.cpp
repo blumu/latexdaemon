@@ -285,6 +285,8 @@ vector<CFilename> auto_deps, auto_preamb_deps;
 // output filter mode
 FILTER Filter = Highlight;
 
+// Set to true if TeX distribution is detected, false otherwise (MikTex)
+bool texLive = false;
 
 // type of the parameter passed to the "make" thread
 typedef struct {
@@ -1567,7 +1569,20 @@ int _tmain(int argc, TCHAR *argv[])
     hEvtDependenciesChanged = CreateEvent(NULL,TRUE,FALSE,NULL);
     // initialize the critical section used to sequentialized console output
     InitializeCriticalSection(&cs);
-    
+
+    // Make sure TeX is installed and runnable
+    DWORD texRet = mainlauncher.launch_and_wait(_T("tex.exe --version"), NULL, Raw);
+    if (texRet != 0) {
+        tcerr << fgErr << "Could not locate an installation of TeX. Make sure tex.exe is in your PATH." << fgNormal;
+    }
+
+    // Detect distribution of Latex
+    string pathvar = (string)(getenv("PATH"));
+    if (pathvar.find("\\texlive") != std::string::npos) {
+        tcout << fgNormal << "TeX Live distribution detected\n";
+        texLive = true;
+    }
+
     unsigned int uiFlags = 0;
     CSimpleOpt args(argc, argv, g_rgOptions, true);
     while (args.Next()) {
@@ -1577,7 +1592,7 @@ int _tmain(int argc, TCHAR *argv[])
 
     int ret = -1;    
     if( args.FileCount() == 0 ){
-        tcout << fgWarning << _T("No input file specified.\n") << fgNormal;
+        tcout << fgWarning << _T("No input file specified. Type 'l' to open a .tex document.\n") << fgNormal;
     }
     else {
         CSimpleGlob nglob(SG_GLOB_ONLYFILE);
@@ -2193,13 +2208,24 @@ _T("{\\catcode`\\^^M=\\active")
             latex_post = _T("");
         }
 
-
+        tstring outputdirectory;
         tstring auxopt = _T("");
-        if( auxdir != _T("") ) {
+        if (auxdir == _T("")) {
+            outputdirectory = texdir;
+        } else {
             auxopt = _T(" -output-directory=")+auxdir;
-            tstring auxdirpath = GetAuxDirPath();
-            if(!FileExists(auxdirpath.c_str()))
-                CreateDirectory(auxdirpath.c_str(), NULL);
+            outputdirectory = GetAuxDirPath();
+            if(!FileExists(outputdirectory.c_str()))
+                CreateDirectory(outputdirectory.c_str(), NULL);
+        }
+
+        tstring jobnameSwitch;
+
+        if (texLive) {
+            jobnameSwitch = _T(" -job-name=");
+        }
+        else { // Miktex
+            jobnameSwitch = _T(" -fmt=");
         }
 
         EnterCriticalSection( &cs );
@@ -2207,7 +2233,7 @@ _T("{\\catcode`\\^^M=\\active")
             + auxopt
             + (texinifile.compare(_T("pdflatex"))==0 ? pdftexoptions : texoptions)
             + (customtexargs.empty() ? _T("") : customtexargs + _T(" "))
-            + _T(" -job-name=") + preamble_format_basename +
+            + jobnameSwitch + preamble_format_basename +
             + _T(" -ini \"&") + texinifile + _T("\"")
             + _T(" \"")
                 + latex_pre
@@ -2218,6 +2244,18 @@ _T("{\\catcode`\\^^M=\\active")
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
         LeaveCriticalSection( &cs ); 
         DWORD ret = launcher.launch_and_wait(cmdline.c_str(), NULL, Filter);
+
+        // TexLive ignores the -fmt parameter so we need to rename the format file.
+        if (texLive) {
+            tstring formatFileDirectory = GetAuxDirPath();
+            tstring originalFmtFile = formatFileDirectory + _T("\\") + preamble_basename + _T(".fmt");
+            tstring renamedFmtFile = formatFileDirectory + _T("\\") + preamble_format_basename + _T(".fmt");
+            BOOL result = MoveFileEx(originalFmtFile.c_str(), renamedFmtFile.c_str(), MOVEFILE_REPLACE_EXISTING);
+            if (!result) {
+                tcerr << fgErr << "Could not rename format file form " << originalFmtFile << " to " << renamedFmtFile << "\n";
+            }
+        }
+
         recompilingPreamble = false;
         if( ret )
             return ret;
@@ -2262,7 +2300,8 @@ DWORD compile(AbortableProcessLauncher &launcher)
 
 
     tstring auxopt = _T("");
-    if( auxdir != _T("") ) {
+    /// TexLive does nto support aux-directory: https://tex.stackexchange.com/questions/96767/mactex-aux-directory-dir
+    if( auxdir != _T("") && !texLive) {
         auxopt = _T(" -aux-directory=")+auxdir;
         tstring auxdirpath = GetAuxDirPath();
         if(!FileExists(auxdirpath.c_str()))
@@ -2276,8 +2315,9 @@ DWORD compile(AbortableProcessLauncher &launcher)
                         + auxopt
                         + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions)
                         + (customtexargs.empty() ? _T("") : customtexargs + _T(" "));
+    
     if( formatfile != _T("") )
-        cmdline += _T(" \"&")+formatfile+_T("\"");
+        cmdline += _T(" \"&") + auxdir + _T("\\") + formatfile + _T("\"");
     if( latex_pre == _T("") ) // && latex_post == _T("") ) 
         cmdline += _T(" \"") + texbasename + _T(".tex\"");
     else
