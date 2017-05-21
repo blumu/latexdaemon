@@ -1,4 +1,6 @@
 :: Requirement: GNU sed tool
+:: Sed comes installed with Git
+SET sed="C:\Program Files\Git\usr\bin\sed.exe"
 
 :: pattern used for version info extraction
 set MAJOR_PATTERN=s/\#define\s*MAJOR_VERSION\s*\(.*\)/\1/p
@@ -6,13 +8,13 @@ set MINOR_PATTERN=s/\#define\s*MINOR_VERSION\s*\(.*\)/\1/p
 set BUILD_PATTERN=s/\#define\s*BUILD\s*\(.*\)/\1/p
 
 :: get the version number from the header version file
-sed -n '%MAJOR_PATTERN%' version.h2 > tmp.tmp
+%sed% -n '%MAJOR_PATTERN%' version.h2 > tmp.tmp
 set /p MAJOR_VERSION= < tmp.tmp
 
-sed -n '%MINOR_PATTERN%' version.h2 > tmp.tmp
+%sed% -n '%MINOR_PATTERN%' version.h2 > tmp.tmp
 set /p MINOR_VERSION= < tmp.tmp
 
-sed -n '%BUILD_PATTERN%' version.h2 > tmp.tmp
+%sed% -n '%BUILD_PATTERN%' version.h2 > tmp.tmp
 set /p BUILD= < tmp.tmp
 del tmp.tmp
 

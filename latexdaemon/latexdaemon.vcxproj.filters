@@ -13,6 +13,9 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
+    <Filter Include="Scripts">
+      <UniqueIdentifier>{a56af31f-4ad6-45a7-84da-75985aed5ef2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CFilename.h">
@@ -39,6 +42,24 @@
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CommandLineToArgv.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Crc32Dynamic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleGlob.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleOpt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="tstring.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="latexdaemon.ico">
@@ -49,6 +70,30 @@
     </None>
     <None Include="changelog-inc.html" />
     <None Include="changelog.html" />
+    <None Include="version.h2">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="build.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="getver.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="publish.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="setenv.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="test.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="zip.cmd">
+      <Filter>Scripts</Filter>
+    </None>
+    <None Include="custom.cmd">
+      <Filter>Scripts</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="latexdaemon.rc">
