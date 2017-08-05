@@ -2222,10 +2222,9 @@ _T("{\\catcode`\\^^M=\\active")
         tstring jobnameSwitch;
 
         if (texLive) {
-            jobnameSwitch = _T(" -job-name=");
-        }
-        else { // Miktex
             jobnameSwitch = _T(" -fmt=");
+        } else { // Miktex
+            jobnameSwitch = _T(" -job-name=");
         }
 
         EnterCriticalSection( &cs );
