@@ -1,3 +1,4 @@
+
 LaTexDaemon
 ===========
 
@@ -17,6 +18,9 @@ auxiliary .tex files or .gif/.pdf graphics. The tool uses very little OS resourc
 a LaTeX recompilation when necessary. In particular preamble compilation only occurs if the preamble part
 of the .tex document is altered. 
 
+Build status
+------------
+[![Build status](https://ci.appveyor.com/api/projects/status/53ft206wrgt2v5gw?svg=true)](https://ci.appveyor.com/project/blumu/latexdaemon)
 
 Download
 --------
