@@ -2,3 +2,4 @@ latexdaemon/Debug/**
 latexdaemon/.vs/**
 **/Release/**
 latexdaemon/latexdaemon.vcxproj.user
+/.vs/*

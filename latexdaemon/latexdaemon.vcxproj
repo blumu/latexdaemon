@@ -14,7 +14,7 @@
     <ProjectGuid>{D0C89767-D67A-4557-BB8B-7525999C1FC1}</ProjectGuid>
     <RootNamespace>latexdaemon</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.15063.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -124,16 +124,8 @@
     <None Include="custom.cmd">
       <DeploymentContent>true</DeploymentContent>
     </None>
-    <None Include="zip.cmd" />
-    <None Include="build.cmd" />
-    <None Include="getver.cmd" />
     <None Include="latexdaemon.ico" />
     <None Include="pdfdaemon.ico" />
-    <None Include="changelog-inc.html" />
-    <None Include="changelog.html" />
-    <None Include="publish.cmd" />
-    <None Include="setenv.cmd" />
-    <None Include="test.cmd" />
     <None Include="version.h2" />
   </ItemGroup>
   <ItemGroup>
