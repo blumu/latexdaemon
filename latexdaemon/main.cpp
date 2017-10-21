@@ -276,6 +276,10 @@ tstring pdftexoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120
 // can be overwritten with the option "custom_args=..."
 tstring customtexargs = _T("--src-specials");
 
+// By default, runs in daemon mode with an interactive loop for entering commands
+// Can be disabled at the command-line to instead run a single command and exit
+bool daemonMode = true;
+
 // command line of a custom command (can be used to launch a custom batch file)
 tstring customcmd = _T("");
 
@@ -309,7 +313,7 @@ typedef struct {
 // define the ID values to indentify the option
 enum { 
     // command line options
-    OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, 
+    OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, OPT_EXIT,
     // prompt commands
     OPT_HELP, OPT_COMPILE, OPT_FULLCOMPILE, OPT_QUIT, OPT_BIBTEX, OPT_MAKEINDEX, OPT_DVIPS, OPT_DVIPSPDF, OPT_DVIPNG, OPT_RUN,
     OPT_CUSTOM, OPT_CUSTOMTEXARG, OPT_PWD,
@@ -345,6 +349,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_CUSTOMTEXARG, _T("--custom_args"),   SO_REQ_CMB },
     { OPT_WATCH,        _T("-watch"),          SO_REQ_CMB },
     { OPT_WATCH,        _T("--watch"),         SO_REQ_CMB },
+    { OPT_EXIT,         _T("-exit"),           SO_NONE },
+    { OPT_EXIT,         _T("--exit"),          SO_NONE },
     { OPT_AUXDIR,       _T("-aux-directory"),  SO_REQ_CMB },
     { OPT_AUXDIR,       _T("--aux-directory"), SO_REQ_CMB },
     { OPT_AUTODEP,      _T("-autodep"),        SO_REQ_CMB },
@@ -389,7 +395,7 @@ CSimpleOpt::SOption g_rgPromptOptions[] = {
     { OPT_AUTODEP,      _T("-autodep"),       SO_REQ_CMB },
     { OPT_AFTERJOB,     _T("-afterjob"),      SO_REQ_CMB },
     { OPT_CUSTOM,       _T("-custom"),        SO_REQ_CMB },
-    { OPT_CUSTOMTEXARG, _T("-custom_args"),    SO_REQ_CMB },
+    { OPT_CUSTOMTEXARG, _T("-custom_args"),   SO_REQ_CMB },
     { OPT_GSVIEW,       _T("-gsview"),        SO_REQ_CMB },
     { OPT_PWD,          _T("-pwd"),           SO_NONE },
     { OPT_QUIT,         _T("-q"),             SO_NONE },
@@ -497,6 +503,8 @@ void ShowUsage() {
          << "   Use DIR as the directory to write auxiliary files to."<<endl<<endl
          << " --watch={yes|no}" << endl 
          << "   If set to 'no' then it compiles the document and exits immediately without watching for file changes."<<endl<<endl
+         << " --exit" << endl
+         << "   Run the requested compilation command and quit immediately without watching for further source file modificiation (no daemon)." << endl << endl
          << " --force {compile|fullcompile}" << endl
          << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
          << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
@@ -868,13 +876,23 @@ void ExecuteOptionCustom( tstring optionarg )
 }
 
 // Code executed when the -customargs option is set
-void ExecuteOptionCustomTexArg( tstring optionarg )
+void ExecuteOptionCustomTexArg( tstring optionarg)
 {
     EnterCriticalSection( &cs );
     customtexargs = optionarg;
     tcout << fgNormal << "-Custom argument to be passed to the TeX engine: '" << customtexargs << "'" << endl;
     LeaveCriticalSection(&cs);
 }
+
+// Handler for -exit option
+void ExecuteOptionExit()
+{
+    EnterCriticalSection(&cs);
+    daemonMode = false;
+    tcout << fgNormal << "-Latexdaemon started in non-daemon mode. Will exit after compilation terminates.'" << endl;
+    LeaveCriticalSection(&cs);
+}
+
 
 // Code executed when the -watch option is specified
 void ExecuteOptionWatch( tstring optionarg )
@@ -1182,6 +1200,7 @@ int ExecuteCommand(tstring command)
     case OPT_USAGE:
         EnterCriticalSection( &cs );
             tcout << fgNormal;
+            daemonMode = false; // quit immediately after showing usage info.
             ShowUsage();
         LeaveCriticalSection( &cs ); 
         break;
@@ -1232,25 +1251,25 @@ int ExecuteCommand(tstring command)
              << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
         LeaveCriticalSection( &cs ); 
         break;
-    case OPT_INI:        ExecuteOptionIni(args.OptionArg());              break;
-    case OPT_PREAMBLE:   ExecuteOptionPreamble(args.OptionArg());         break;
-    case OPT_AFTERJOB:   ExecuteOptionAfterJob(args.OptionArg());         break;
-    case OPT_CUSTOM:     ExecuteOptionCustom(args.OptionArg());         break;
-    case OPT_CUSTOMTEXARG: ExecuteOptionCustomTexArg(args.OptionArg());   break;
-    case OPT_WATCH:      ExecuteOptionWatch(args.OptionArg());            break;
-    case OPT_AUXDIR:     ExecuteOptionAuxDirectory(args.OptionArg());            break;
-    case OPT_AUTODEP:    ExecuteOptionAutoDependencies(args.OptionArg()); break;
-    case OPT_FILTER:     ExecuteOptionOutputFilter(args.OptionArg());     break;
-    case OPT_GSVIEW:     {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
-    case OPT_BIBTEX:     bibtex(mainlauncher);      break;
-    case OPT_EDIT:       edit();        break;
-    case OPT_CLEANUP:    cleanup();     break;
-    case OPT_VIEWOUTPUT: view();        break;
-    case OPT_VIEWDVI:    view_dvi();    break;
-    case OPT_VIEWPS:     view_ps();     break;
-    case OPT_VIEWPDF:    view_pdf();    break;
-    case OPT_OPENFOLDER: openfolder();  break;
-    case OPT_PWD:        pwd();         break;
+    case OPT_INI:          ExecuteOptionIni(args.OptionArg());              break;
+    case OPT_PREAMBLE:     ExecuteOptionPreamble(args.OptionArg());         break;
+    case OPT_AFTERJOB:     ExecuteOptionAfterJob(args.OptionArg());         break;
+    case OPT_CUSTOM:       ExecuteOptionCustom(args.OptionArg());           break;
+    case OPT_CUSTOMTEXARG: ExecuteOptionCustomTexArg(args.OptionArg());     break;
+    case OPT_WATCH:        ExecuteOptionWatch(args.OptionArg());            break;
+    case OPT_AUXDIR:       ExecuteOptionAuxDirectory(args.OptionArg());     break;
+    case OPT_AUTODEP:      ExecuteOptionAutoDependencies(args.OptionArg()); break;
+    case OPT_FILTER:       ExecuteOptionOutputFilter(args.OptionArg());     break;
+    case OPT_GSVIEW:       {PTSTR p=args.OptionArg(); ExecuteOptionGsview(p?p:_T(""));} break;
+    case OPT_BIBTEX:       bibtex(mainlauncher);      break;
+    case OPT_EDIT:         edit();                    break;
+    case OPT_CLEANUP:      cleanup();                 break;
+    case OPT_VIEWOUTPUT:   view();                    break;
+    case OPT_VIEWDVI:      view_dvi();                break;
+    case OPT_VIEWPS:       view_ps();                 break;
+    case OPT_VIEWPDF:      view_pdf();                break;
+    case OPT_OPENFOLDER:   openfolder();              break;
+    case OPT_PWD:          pwd();                     break;
     
     case OPT_MAKEINDEX:
         {
@@ -1540,7 +1559,8 @@ int ExecuteCommand(CSimpleOpt &args)
         case OPT_INI:           ExecuteOptionIni(args.OptionArg());                 break;
         case OPT_AUTODEP:       ExecuteOptionAutoDependencies(args.OptionArg());    break;
         case OPT_WATCH:         ExecuteOptionWatch(args.OptionArg());               break;
-        case OPT_AUXDIR:	      ExecuteOptionAuxDirectory(args.OptionArg());        break;
+        case OPT_EXIT:          ExecuteOptionExit();                                break;
+        case OPT_AUXDIR:        ExecuteOptionAuxDirectory(args.OptionArg());        break;
         case OPT_FILTER:        ExecuteOptionOutputFilter(args.OptionArg());        break;
         case OPT_FORCE:         ExecuteOptionForce(args.OptionArg());               break;
         case OPT_GSVIEW:        ExecuteOptionGsview(_T(""));                        break;
@@ -1548,7 +1568,7 @@ int ExecuteCommand(CSimpleOpt &args)
         case OPT_AFTERJOB:      ExecuteOptionAfterJob(args.OptionArg());            break;
         case OPT_CUSTOM:        ExecuteOptionCustom(args.OptionArg());              break;
         case OPT_CUSTOMTEXARG:  ExecuteOptionCustomTexArg(args.OptionArg());        break;
-        default:                
+        default:
             return false;
     }
     return true;
@@ -1630,12 +1650,19 @@ int _tmain(int argc, TCHAR *argv[])
     }
 
     if( Watch ) { // If watching has been requested by the user
-        // if some correct file was given as a command line parameter 
+        
+        // and if a valid input file was specified at the command line
         if( ret == 0 )
             RestartWatchingThread(); // then start watching
 
+    }
+
+    if (daemonMode) {
         // start the prompt loop
         CommandPromptThread(NULL);
+    }
+    else {
+        tcout << fgMsg << _T("Command completed, exiting.\n") << fgNormal;
     }
 
 exit:	
