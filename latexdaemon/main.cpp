@@ -137,6 +137,8 @@ int compare_timestamp(LPCTSTR sourcefile, LPCTSTR outputfile);
 void RestartWatchingThread();
 unsigned __stdcall CommandPromptThread( void *param ); // main thread
 unsigned __stdcall WatchingThread( void *param );
+void GetDependencyDigests(std::vector<CFilename> &deps, md5 * dg_deps);
+void GetTexDependencies(std::vector<CFilename> &deps);
 unsigned __stdcall MakeThread( void *param );
 bool FindInternalPreamble(DWORD *preamble_len = NULL);
 bool LoadPreambleDigest(md5 &digest);
@@ -711,12 +713,17 @@ void SetPreambleFormatName()
 // and needs to be recompiled.
 bool PreambleFormatFileUptodate()
 {
-	TCHAR sCurrDir[MAX_PATH];
-	GetCurrentDir(sCurrDir);
+    TCHAR sCurrDir[MAX_PATH];
+    GetCurrentDir(sCurrDir);
 
-    ///////////////////
-    // If an external preamble file is used then check if the preamble dependencies have been touched since last compilation
-    if( PreambleType != None ) {
+    if (PreambleType == None) {
+        tcout << _T("-Preamble: none\n");
+        return false;
+    } 
+    else {
+        ///////////////////
+        // An external preamble file is used: check if the preamble dependencies have been touched since last compilation
+
         ReadDependencies(GetPreambleDependFilePath().c_str(), auto_preamb_deps);
 
         // compare the timestamp of the preamble file with the format file
@@ -729,12 +736,12 @@ bool PreambleFormatFileUptodate()
             if( res == SRC_FRESHER ) {
                 // then it is necessary to recreate the format file and to perform a full recompilation
                 tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
-                return false;
+                return true;
             }
             // if the format file does not exist
             else if ( res & ERR_OUTABSENT ) {
                 tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
-                return false;
+                return true;
             }
         }
         else if ( PreambleType == Internal ) {
@@ -755,36 +762,33 @@ bool PreambleFormatFileUptodate()
                     success = false;
                 }
 
-                if (success && previousDigest != newDigest) {
-                    tcout << fgMsg << "+ " << preamble_filename << " has been modified since last run.\n";
+                if (success && previousDigest == newDigest) {
+                    tcout << fgMsg << "+ Preamble in " << preamble_filename << " was touched since last run but preamble digest was preserved.\n";
                     return false;
                 } else {
-                    tcout << fgMsg << "+ " << preamble_filename << " was touched since last run but preamble digest was preserved.\n";
+                    tcout << fgMsg << "+ Preamble in " << preamble_filename << " was touched since last run.\n";
+                    return true;
                 }
             }
             // if the format file does not exist
             else if ( res & ERR_OUTABSENT ) {
                 tcout << fgMsg << "+ " << preamble_format_filepath << " does not exist. Let's create it...\n";
-                return false;
+                return true;
             }
         }
 
-
-        // Check if some preamble dependency has been touched
+        // Check if any preamble dependency was touched
         for(vector<CFilename>::iterator it = auto_preamb_deps.begin();
             it!= auto_preamb_deps.end(); it++) {
             int res = compare_timestamp(it->c_str(), preamble_format_filepath.c_str());
 
             if( res == SRC_FRESHER ) {
                 tcout << fgMsg << "+ Preamble dependency modified since last run: " << it->c_str() << "\n";
-                return false;
+                return true;
             }
         }
+        return false;
     }
-    else
-        tcout << _T("-Preamble: none\n");
-
-    return true;
 }
 
 
@@ -803,7 +807,7 @@ void ExecuteOptionIni( tstring optionarg )
 
     if( FileLoaded ) {
         SetPreambleFormatName(); // reset the name of the current preamble format file
-        if( !PreambleFormatFileUptodate() )
+        if( PreambleFormatFileUptodate() )
             fullcompile(mainlauncher);      // recompile the preamble format file
     }
 }
@@ -889,7 +893,7 @@ void ExecuteOptionExit()
 {
     EnterCriticalSection(&cs);
     daemonMode = false;
-    tcout << fgNormal << "-Latexdaemon started in non-daemon mode. Will exit after compilation terminates.'" << endl;
+    tcout << fgNormal << "-Latexdaemon started in non-daemon mode. Will exit after compilation terminates." << endl;
     LeaveCriticalSection(&cs);
 }
 
@@ -1788,6 +1792,33 @@ bool str_skip(PCTSTR *strp, PCTSTR expect)
    }
 }
 
+// Return true if any dependency file was modified 
+// since last time the output file was created
+bool AnyDependencyChanged()
+{
+    tstring output = texbasename + output_ext;
+
+    // check if any static (manually specified) dependencies was touched
+    for (vector<CFilename>::iterator it = static_deps.begin(); it != static_deps.end(); it++)
+    {
+        if (SRC_FRESHER == compare_timestamp(it->c_str(), output.c_str())) {
+            tcout << fgMsg << _T("+ The file ") << it->Relative(texdir.c_str()) << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
+            return true;
+        }
+    }
+
+    // check if any automatically detected dependency was touched
+    for (vector<CFilename>::iterator it = auto_deps.begin();
+        it != auto_deps.end(); it++) {
+        if (SRC_FRESHER == compare_timestamp(it->c_str(), (texbasename + output_ext).c_str())) {
+            tcout << fgMsg << "+ The file " << it->c_str() << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // Load a .tex file with some additional dependencies. The first file in the depglob must be the main .tex file, the rest being the static dependencies
 int loadfile( CSimpleGlob &depglob, JOB initialjob )
 {
@@ -1941,7 +1972,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     JOB job = initialjob;  // by default it is the job requested by the user (using command line options)
 
     SetPreambleFormatName(); // set the name of the preamble format file
-    if( !PreambleFormatFileUptodate() )
+    if( PreambleFormatFileUptodate() )
         job = FullCompile;
     
     // Initialize the .tex file dependency list
@@ -1952,9 +1983,9 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     if( job != Compile && job != FullCompile) {
 
         ///////////////////
-        // Check if the .tex file dependencies have been touched since last compilation
+        // Check if the .tex file dependencies were touched since last compilation
         
-        // check if the main file has been modified since the creation of the dvi file
+        // First check if the main file has been modified since the creation of the dvi file
         int maintex_comp = compare_timestamp((texbasename+_T(".tex")).c_str(), (texbasename+output_ext).c_str());
 
         if ( maintex_comp & ERR_SRCABSENT ) {
@@ -1969,24 +2000,13 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
             tcout << fgMsg << "+ the main .tex file has been modified since last run. Let's recompile...\n";
             job = Compile;
         }
-        else { // maintex_comp == OUT_FRESHER 
-
-            // check if some manual dependency file has been modified since the creation of the dvi file
-            for(vector<CFilename>::iterator it = static_deps.begin(); it!=static_deps.end(); it++)                
-                if( SRC_FRESHER == compare_timestamp(it->c_str(), (texbasename+output_ext).c_str()) ) {
-                    tcout << fgMsg << _T("+ The file ") << it->Relative(texdir.c_str()) << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";
-                    job = Compile;
-                    break;
-                }
-
-            // Check if some automatic dependencies has been touched
-            if( job != FullCompile )
-                for(vector<CFilename>::iterator it = auto_deps.begin();
-                    it!= auto_deps.end(); it++)
-                    if( SRC_FRESHER == compare_timestamp(it->c_str(), (texbasename+output_ext).c_str()) ) {
-                        tcout << fgMsg << "+ The file " << it->c_str() << ", on which the main .tex depends has been modified since last run. Let's recompile...\n";                        
-                        job = Compile;
-                    }
+        else if(job != FullCompile) { // maintex_comp == OUT_FRESHER 
+            if (AnyDependencyChanged()) {
+                job = Compile;
+            }
+            else {
+                tcout << fgMsg << "+ Output file up to date: none of the source files or dependencies have changed since last compilation.\n";
+            }
         }
     }
 
@@ -1995,7 +2015,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     // Perform the job that needs to be done
     if( job != Rest ) {
         if( job == FullCompile )
-            tcout << fgMsg << "  Let's recreate the format file and then recompile " << texbasename << ".tex.\n";
+            tcout << fgMsg << "  Let's recreate the format file before recompiling " << texbasename << ".tex.\n";
 
         DWORD errcode = make(mainlauncher, job);
 
@@ -2005,6 +2025,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
 
     return 0;
 }
+
 
 
 
@@ -2100,6 +2121,95 @@ tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
     }
     else
         return _T("");
+}
+
+
+// Compute external or internal preamble digest.
+// Return true on success, false on failure.
+//   - preamb_deps: returns the list of preamble dependency files
+//   - dg_preamb_deps: array of digests for all the preamble dependency
+//   - dg_preamble: digest of the preamble (either dedicated external file, or internal preamble)
+// The caller is responsible for freeing dg_preamb_deps.
+bool ComputePreambleDigest(std::vector<CFilename> &preamb_deps, md5* &dg_preamb_deps, md5 &dg_preamble)
+{
+    // Get current directory and keep as reference directory
+    TCHAR sCurrDir[MAX_PATH];
+    GetCurrentDir(sCurrDir);
+
+    if (PreambleType == External)
+        preamb_deps.push_back(CFilename(sCurrDir, preamble_filename));
+
+    // load the dependency list that was generated by the last compilation of the preamble
+    if (Autodep) {
+        for (vector<CFilename>::iterator it = auto_preamb_deps.begin();
+            it != auto_preamb_deps.end(); it++) {
+            preamb_deps.push_back(CFilename(sCurrDir, *it));
+        }
+    }
+
+    dg_preamb_deps = new md5[preamb_deps.size()];
+    for (size_t n = 0; n < preamb_deps.size(); n++) {
+        if (dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str())) {
+            if (n > 0) {
+                print_if_possible(fgMsg, _T("Preamble dependency detected: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
+            }
+        }
+        else {
+            if (PreambleType == External && n == 0) {
+                print_if_possible(fgErr, _T("The preamble file ") + preamble_filename + _T(" cannot be found or opened!\n"));
+                delete dg_preamb_deps;
+                dg_preamb_deps = NULL;
+                return false;
+            }
+            else {
+                print_if_possible(fgIgnoredfile, _T("Preamble dependency detected but cannot be opened: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
+            }
+        }
+    }
+    if (PreambleType == External) {
+        dg_preamble = dg_preamb_deps[0];
+        return true;
+    }
+    // Does the main document contian an internal preamble?
+    else if (FindInternalPreamble(&preamble_size)) {
+        dg_preamble.DigestFile(CFilename(sCurrDir, preamble_filename), preamble_size);
+        return true;
+    }
+    else {
+        print_if_possible(fgErr, _T("Error: could not find internal preamble!"));
+        dg_preamble = dg_preamb_deps[0];
+        return true;
+    }
+}
+
+// Length of an MD5 digest
+#define DIGEST_LENGTH 16
+
+// Persist the preamble digest to disk
+void SavePreambleDigest(md5 digest)
+{
+    tstring digestFile = GetPreambleDigestFilePath();
+    tcout << fgMsg << "\n-- Persisiting preamble digest to " << digestFile << "\n" << fgNormal;
+    ofstream file;
+    file.open(GetPreambleDigestFilePath());
+    unsigned char *serializedDigest = digest.Digest();
+    file.write((char *)serializedDigest, DIGEST_LENGTH);
+    file.close();
+}
+
+// Load the persisted preamble digest from disk
+bool LoadPreambleDigest(md5 &digest)
+{
+    ifstream file;
+    file.open(GetPreambleDigestFilePath());
+    if (file) {
+        char serializedDigest[DIGEST_LENGTH];
+        file.read(serializedDigest, sizeof(serializedDigest));
+        file.close();
+        digest.Init((unsigned char *)serializedDigest);
+        return true;
+    }
+    return false;
 }
 
 // Recompile the preamble into the format file "texfile.fmt" and then compile the main file
@@ -2311,6 +2421,16 @@ _T("{\\catcode`\\^^M=\\active")
         recompilingPreamble = false;
         if( ret )
             return ret;
+    }
+
+
+    // Calculate and persist preamble digest
+    vector<CFilename> preamb_deps;
+    md5 *dg_preamb_deps = NULL;
+    md5 dg_preamble;
+    if (ComputePreambleDigest(preamb_deps, dg_preamb_deps, dg_preamble)) {
+        SavePreambleDigest(dg_preamble);
+        delete dg_preamb_deps;
     }
 
     return compile(launcher);
@@ -2840,81 +2960,38 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
 
     return pwdi;
 }
-
-// Compute external or internal preamble digest.
-int ComputePreambleDigest(std::vector<CFilename> &preamb_deps, TCHAR sCurrDir[260], md5* &dg_preamb_deps, md5* dg_deps, md5 &dg_preamble)
+/// Get dependencies of the main .tex file
+std::vector<CFilename> GetDocumentDependencies()
 {
-    if (PreambleType == External)
-        preamb_deps.push_back(CFilename(sCurrDir, preamble_filename));
+    std::vector<CFilename> deps;
 
-    // load the dependency list that was generated by the last compilation of the preamble
+    // Add the manual dependencies (the first one is the main tex file)
+    for (vector<CFilename>::iterator it = static_deps.begin(); it != static_deps.end(); it++)
+        deps.push_back(*it);
+    
+    // load the depencies automatically generated by the last compilation of the main tex file
     if (Autodep) {
-        for (vector<CFilename>::iterator it = auto_preamb_deps.begin();
-            it != auto_preamb_deps.end(); it++) {
-            preamb_deps.push_back(CFilename(sCurrDir, *it));
-        }
+        for (vector<CFilename>::iterator it = auto_deps.begin(); it != auto_deps.end(); it++)
+            deps.push_back(*it);
     }
 
-    dg_preamb_deps = new md5[preamb_deps.size()];
-    for (size_t n = 0; n < preamb_deps.size(); n++) {
-        if (dg_preamb_deps[n].DigestFile(preamb_deps[n].c_str())) {
-            if (n > 0) {
-                print_if_possible(fgMsg, _T("Preamble dependency detected: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
-            }
-        }
-        else {
-            if (PreambleType == External && n == 0) {
-                print_if_possible(fgErr, _T("The preamble file ") + preamble_filename + _T(" cannot be found or opened!\n"));
-                delete dg_preamb_deps;
-                return 2;
-            }
-            else {
-                print_if_possible(fgIgnoredfile, _T("Preamble dependency detected but cannot be opened: ") + preamb_deps[n].Relative(sCurrDir) + _T("\n"));
-            }
-        }
-    }
-    if (PreambleType == External) {
-        dg_preamble = dg_preamb_deps[0];
-        return 0;
-    }
-    // Does the main document contian an internal preamble?
-    else if (FindInternalPreamble(&preamble_size)) {
-        dg_preamble.DigestFile(CFilename(sCurrDir, preamble_filename), preamble_size);
-        return 0;
-    }
-    else {
-        print_if_possible(fgErr, _T("Error: could not find internal preamble!"));
-        dg_preamble = dg_preamb_deps[0];
-        return 0;
-    }
+    return deps;
 }
 
-// Length of an MD5 digest
-#define DIGEST_LENGTH 16
-
-// Persist the preamble digest to disk
-void SavePreambleDigest(md5 digest)
+md5 *GetDependencyDigests(std::vector<CFilename> &deps)
 {
-    ofstream file;
-    file.open(GetPreambleDigestFilePath());
-    unsigned char *serializedDigest = digest.Digest();
-    file.write((char *)serializedDigest, DIGEST_LENGTH);
-    file.close();
-}
+    TCHAR sCurrDir[MAX_PATH];
+    GetCurrentDir(sCurrDir);
 
-// Load the persisted preamble digest from disk
-bool LoadPreambleDigest(md5 &digest)
-{
-    ifstream file;
-    file.open(GetPreambleDigestFilePath());
-    if (file) {
-        char serializedDigest[DIGEST_LENGTH];
-        file.read(serializedDigest, sizeof(serializedDigest));
-        file.close();
-        digest.Init((unsigned char *)serializedDigest);
-        return true;
+    md5 *dg_deps = new md5[deps.size()];
+    for (size_t n = 0; n < deps.size(); n++) {
+        if (dg_deps[n].DigestFile(deps[n].c_str())) {
+            if (n>0) print_if_possible(fgMsg, _T("Dependency detected: ") + deps[n].Relative(sCurrDir) + _T("\n"));
+        }
+        else
+            print_if_possible(fgIgnoredfile, _T("Dependency detected but cannot be opened: ") + deps[n].Relative(sCurrDir) + _T("\n"));
     }
-    return false;
+    return dg_deps;
 }
 
 // Thread responsible of watching the directory and launching compilation when a change is detected
@@ -2929,48 +3006,29 @@ unsigned __stdcall WatchingThread( void* param )
     tcout << fgMsg << "\n-- Watching files for change...\n" << fgNormal;
     LeaveCriticalSection( &cs ); 
  
-    // Get current directory and keep as reference directory
-    TCHAR sCurrDir[MAX_PATH];
-    GetCurrentDir(sCurrDir);
-
     // Iterate this loop every time the dependencies change
     bool bContinue = true;
     while( bContinue ) {
         bContinue = false;
 
-        ///// Dependencies of the main .tex file
-        vector<CFilename> deps;
-        // Add the manual dependencies (the first one is the main tex file)
-        for (vector<CFilename>::iterator it = static_deps.begin(); it != static_deps.end(); it++)
-            deps.push_back(*it);
-        // load the depencies automatically generated by the last compilation of the main tex file
-        if( Autodep )
-            for(vector<CFilename>::iterator it = auto_deps.begin(); it!=auto_deps.end();it++)
-                deps.push_back(*it);
+        // Dependencies of the main .tex file
+        vector<CFilename> deps = GetDocumentDependencies();
        
-        ////// get the digest of the dependcy files
-        md5 *dg_deps = new md5 [deps.size()];
-        for (size_t n = 0; n < deps.size(); n++) {
-            if( dg_deps[n].DigestFile(deps[n].c_str()) ) {
-                if(n>0) print_if_possible(fgMsg, _T("Dependency detected: ") + deps[n].Relative(sCurrDir) + _T("\n"));
-            }
-            else
-                print_if_possible(fgIgnoredfile, _T("Dependency detected but cannot be opened: ") + deps[n].Relative(sCurrDir) + _T("\n"));
-        }
+        // Calculate the digest of every dependency file
+        md5 *dg_deps = GetDependencyDigests(deps);
 
-        ///// Dependencies of the preamble file
-        vector<CFilename> preamb_deps;
-        md5 *dg_preamb_deps = NULL;
+        // Get the list of premable dependencies and their MD5 digests
+        vector<CFilename> preamb_deps; // List of preamble dependency files
+        md5 *dg_preamb_deps = NULL; // array of digest for each preamble dependency
         md5 dg_preamble; // digest of the preamble (either dedicated external file, or internal preamble)
         if (PreambleType != None) {
-            int error = ComputePreambleDigest(preamb_deps, sCurrDir, dg_preamb_deps, dg_deps, dg_preamble);
-            if (error) {
-                delete dg_deps;
-                _endthreadex(2); // abort the thread
-                return error;
+            if (ComputePreambleDigest(preamb_deps, dg_preamb_deps, dg_preamble)) {
+                // persist the preamble digest to disk
+                SavePreambleDigest(dg_preamble);
             }
-            // persist the premable digest to disk
-            SavePreambleDigest(dg_preamble);
+            else {
+                PreambleType = None;
+            }
         }
 
         // Get the digest of the file containing bibtex bibliography references
@@ -2982,15 +3040,15 @@ unsigned __stdcall WatchingThread( void* param )
         // some thread requires to notify a dependency change
         ResetEvent(hEvtDependenciesChanged);
 
-        ////// Create the list of dir to be watched
+        ////// Create the list of directories to watch
         vector<WATCHDIRINFO *> watchdirs; // info on the directories to be monitored
 
-        for(vector<CFilename>::iterator it = deps.begin(); it!=deps.end();it++) {
+        for(auto it = deps.begin(); it!=deps.end();it++) {
             tstring abspath = it->GetDirectory();
             if( !is_wdi_in(watchdirs, abspath.c_str()) )
                 watchdirs.push_back(CreateWatchDir(abspath.c_str()));
         }
-        for(vector<CFilename>::iterator it = preamb_deps.begin(); it!=preamb_deps.end();it++) {
+        for(auto it = preamb_deps.begin(); it!=preamb_deps.end();it++) {
             tstring abspath = it->GetDirectory();
             if( !is_wdi_in(watchdirs, abspath.c_str()) )
                 watchdirs.push_back(CreateWatchDir(abspath.c_str()));
@@ -3075,7 +3133,7 @@ unsigned __stdcall WatchingThread( void* param )
                     goto next_entry;
 
                 if( pFileNotify->Action != FILE_ACTION_MODIFIED ) {
-        					print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" touched\n") );
+                    print_if_possible(fgIgnoredfile, tstring(_T(".\"")) + modifiedfile.Relative(texdir) + _T("\" touched\n") );
                 }
                 else {
                     md5 dg_new;
@@ -3152,14 +3210,15 @@ next_entry:
 
         }
 
-// cleaning
+        
+        // Cleanup handles
+
         for(size_t i=0; i<nWdi;i++) {
             CloseHandle(watchdirs[i]->overl.hEvent);
             CloseHandle(watchdirs[i]->hDir);
             delete watchdirs[i];
         }
         delete hp;
-
         delete dg_deps;
         delete dg_preamb_deps;
     }
@@ -3167,3 +3226,5 @@ next_entry:
     _endthreadex( 0 );
     return 0;
 }
+
+
