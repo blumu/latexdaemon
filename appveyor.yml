@@ -1,0 +1,22 @@
+version: 0.11.{build}
+branches:
+  only:
+  - /wiblum/.*/
+  - master
+image: Visual Studio 2017
+configuration: Release
+build:
+  verbosity: minimal
+before_build:
+  - ps: build\beforebuild.ps1
+artifacts:
+- path: latexdaemon\Release\*.exe
+deploy:
+- provider: GitHub
+  release: LatexDaemon v$(appveyor_build_version)
+  auth_token:
+    secure: A57nEYjq6P/Fhsm4lw6DU9a5Hk/arQ9b4MPw0FY972NXwvsQ9TA8eX8Q92d7yYWe
+  draft: true
+  force_update: true
+  on:
+    branch: master

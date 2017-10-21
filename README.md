@@ -2,25 +2,28 @@
 LaTexDaemon
 ===========
 
-LaTeXDaemon speeds-up compilation of LaTeX documents.
+LaTeXDaemon speeds-up compilation of LaTeX and TeX documents.
 
-Description
------------
+Why should I use it?
+--------------------
+LaTeXDaemon simplifies and accelerate your LaTeX processing workflow. It runs silently in the background and automatically recompiles your document when a change is detected, so you can focus on editing your document using your favorite file editor while avoiding round trips with the command prompt. Additionally, it speeds up compilation by pre-compiling the preamble section of your LaTeX source that loads packages (`\usepackage{...}`). 
 
-LaTeXDaemon offers two main advantages over the regular LaTeX processing workflow. First it runs
-silenlty in the background and automatically recompiles your document whenever it is changed. This way you can concentrate on editing
-your document and avoid back and forth trips between your editor and the LaTeX command prompt. 
-Secondly it significantly accelerates the overall compilation time of your document by pre-compiling the preamble: the section
-of your LaTeX source that loads external packages with \usepackage{...}.
+How does it work?
+-----------------
 
-The tool works by silently monitoring your documents using efficient OS-based file system notifications. All your document files are monitored including dependencies such as
-auxiliary .tex files or .gif/.pdf graphics. The tool uses very little OS resources and only triggers
-a LaTeX recompilation when necessary. In particular preamble compilation only occurs if the preamble part
-of the .tex document is altered. 
+The tool works by silently monitoring your documents using efficient OS-based file system notifications. All your document files are monitored including dependencies such as auxiliary `.tex` files, `.gif`, `.pdf` or other graphics. It uses very little OS resources and only triggers a LaTeX recompilation when necessary. In particular, preamble compilation only occurs if the preamble section of the .tex document has actually been touched. Changes to the main section of your document only trigger a quick re-compilation.
 
+Wiki
+----
+
+The [wiki](https://github.com/blumu/latexdaemon/wiki)
+ contains more info, samples and documentation.
+ 
 Build status
 ------------
-[![Build status](https://ci.appveyor.com/api/projects/status/53ft206wrgt2v5gw?svg=true)](https://ci.appveyor.com/project/blumu/latexdaemon)
+Last build (master): [![Last build (master)](https://ci.appveyor.com/api/projects/status/53ft206wrgt2v5gw/branch/master?svg=true)](https://ci.appveyor.com/project/blumu/latexdaemon/branch/master)
+
+Latest build (any branch): [![Latest build (any branch)](https://ci.appveyor.com/api/projects/status/53ft206wrgt2v5gw?svg=true)](https://ci.appveyor.com/project/blumu/latexdaemon)
 
 Download
 --------
