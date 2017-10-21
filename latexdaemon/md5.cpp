@@ -258,6 +258,19 @@ void md5::Init()
 	m_State[3] = 0x10325476;
 }
 
+/// Initialize from an existing string digest 
+void md5::Init(uchar digest[16])
+{
+    memset(m_Count, 0, 2 * sizeof(uint4));
+
+    m_State[0] = 0x67452301;
+    m_State[1] = 0xefcdab89;
+    m_State[2] = 0x98badcfe;
+    m_State[3] = 0x10325476;
+
+    memcpy(m_Digest, digest, 16 * sizeof(uchar));
+}
+
 // md5::Update
 // MD5 block update operation. Continues an MD5 message-digest
 // operation, processing another message block, and updating the
