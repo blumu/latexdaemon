@@ -47,6 +47,8 @@ class md5
 public:
 	md5() { Init(); }
 	void	Init();
+	void    Init(uchar digest[16]);
+
 	void	Update(uchar* chInput, uint4 nInputLen);
 	void	Finalize();
 	uchar*	Digest() { return m_Digest; }
