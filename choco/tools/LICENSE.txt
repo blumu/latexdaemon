@@ -1,0 +1,11 @@
+﻿From: https://github.com/blumu/latexdaemon/blob/master/LICENSE.md
+
+LICENSE
+Latexdaemon code contributed by William Blum is in the Public domain.
+Respsective license for the following OSS code used in this project can be found on the respective author's wesbites.
+- The MD5 class is a modification of CodeGuru's one: http://www.codeguru.com/Cpp/Cpp/algorithms/article.php/c5087
+- Command line processing routine from The Code Project: http://www.codeproject.com/useritems/SimpleOpt.asp
+- Console color header file (Console.h) from: http://www.codeproject.com/cpp/AddColorConsole.asp
+- Function CommandLineToArgvA and CommandLineToArgvW from http://alter.org.ua/en/docs/win/args/
+- Absolute/Relative path converter module from http://www.codeproject.com/useritems/path_conversion.asp
+- mylatex latex pacakge for the preamble extraction macros http://www.ctan.org/tex-archive/help/Catalogue/entries/mylatex.html
