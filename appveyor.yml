@@ -9,8 +9,16 @@ build:
   verbosity: minimal
 before_build:
   - ps: build\beforebuild.ps1
+after_build:
+  - ps: choco pack choco\latexdaemon.nuspec -version $env:APPVEYOR_BUILD_VERSION;
+        Get-ChildItem *.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
+
 artifacts:
 - path: latexdaemon\Release\*.exe
+  name: app
+- path: '*.nupkg'
+  name: choco
+
 deploy:
 - provider: GitHub
   release: LatexDaemon v$(appveyor_build_version)
@@ -20,3 +28,6 @@ deploy:
   force_update: true
   on:
     branch: master
+
+# NOTE: I used following instructions to set up Chocolatey packaging with Appveyor
+# https://blog.gripdev.xyz/2015/04/08/appveyor-github-and-chocolatey-automatically-build-your-project-and-publish-updates-it-to-chocolatey/

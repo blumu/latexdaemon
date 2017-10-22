@@ -3,3 +3,5 @@ latexdaemon/.vs/**
 **/Release/**
 latexdaemon/latexdaemon.vcxproj.user
 /.vs/*
+/choco/latexdaemon.*.nupkg
+/latexdaemon/builds/LatexDaemon.*.zip
