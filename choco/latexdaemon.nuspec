@@ -21,6 +21,7 @@
     <authors>William Blum</authors>
     <projectUrl>http://william.famille-blum.org/software/latexdaemon/index.html</projectUrl>
     <iconUrl>https://github.com/blumu/latexdaemon/blob/master/latexdaemon/latexdaemon.ico</iconUrl>
+    <licenseUrl>https://github.com/blumu/latexdaemon/blob/master/LICENSE.md</licenseUrl>
     <copyright>2017 William Blum</copyright>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>https://github.com/blumu/latexdaemon</projectSourceUrl>
