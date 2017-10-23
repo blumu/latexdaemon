@@ -114,7 +114,7 @@ private:
 #define ERR_SRCABSENT  0x04
 
 // constants corresponding to the different possible jobs that can be exectuted
-enum JOB { Rest = 0 , Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, DviPsPdf = 5, Custom = 6 } ;
+enum JOB { Rest = 0, Dvips = 1, Compile = 2, FullCompile = 3, DviPng = 4, DviPsPdf = 5, Custom = 6, Bibtex = 7 };
 
 
 // constants corresponding to the different preamble locations
@@ -500,39 +500,54 @@ void ShowUsage() {
     tcout << "USAGE: " << progname << " [options] mainfile.tex [dependencies]" <<endl
          << "List of options:" << endl
          << " --help" << endl 
-         << "   Show this help message." <<endl<<endl
+         << "   Show this help message." <<endl
+         << endl
          << " --aux-directory=DIR" << endl 
-         << "   Use DIR as the directory to write auxiliary files to."<<endl<<endl
+         << "   Use DIR as the directory to write auxiliary files to."<<endl
+         << endl
          << " --watch={yes|no}" << endl 
-         << "   If set to 'no' then it compiles the document and exits immediately without watching for file changes."<<endl<<endl
+         << "   If set to 'no' then it compiles the document and exits immediately without watching for file changes."<<endl
+         << endl
          << " --exit" << endl
-         << "   Run the requested compilation command and quit immediately without watching for further source file modificiation (no daemon)." << endl << endl
+         << "   Run the requested compilation command and quit immediately without watching for further source file modificiation (no daemon)." << endl
+         << endl
          << " --force {compile|fullcompile}" << endl
-         << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl<<endl
-         << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl<<endl
+         << "   . 'compile' forces the compilation of the .tex file at the start even when no modification is detected." << endl
+         << endl
+         << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl
+         << endl
          << " --gsview " << endl 
-         << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl << endl
+         << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl
+         << endl
          << " --ini=inifile" << endl 
-         << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl<<endl
+         << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl
+         << endl
          << " --autodep={yes|no}" << endl 
-         << "   Activate the automatic detection of dependencies." << endl << endl
-         << " --afterjob={dvips|dvipng|dvipspdf|custom|rest}" << endl 
+         << "   Activate the automatic detection of dependencies." << endl
+         << endl
+         << " --afterjob={rest|bibtex|dvips|dvipng|dvipspdf|custom}" << endl 
          << "   Specifies what should be done after a successful compilation of the .tex file." << endl 
+         << "     . 'rest' (default) do nothing." << endl
+         << "     . 'bibtex' run bibtex," << endl
          << "     . 'dvips' run dvips on the output dvi file," <<endl
          << "     . 'dvipng' run dvipng on the output dvi file," <<endl
          << "     . 'dvips2pdf' run dvips followed by ps2pdf," <<endl
          << "     . 'custom' run a custom command line specified with the '-custom' option," <<endl
-         << "     . 'rest' (default) do nothing."<<endl
+         << endl
          << " --custom=\"COMMAND LINE\"" << endl 
-         << "   Specifies a command line to execute when afterjob is set to the value 'custom'." << endl 
+         << "   Specifies a command line to execute when afterjob is set to the value 'custom'." << endl
+         << endl
          << " --custom_args=arguments" << endl 
-         << "   Specifies custom arguments to be passed to the TeX engine." << endl 
+         << "   Specifies custom arguments to be passed to the TeX engine." << endl
+         << endl
          << " --filter={highlight|raw|err|warn|err+warn}" << endl 
-         << "   Set the latex output filter mode. Default: highlight" <<endl <<endl
+         << "   Set the latex output filter mode. Default: highlight" <<endl
+         << endl
          << " --preamble={yes|no}" << endl 
          << "   Activate/deactivate precompilation of the preamble."<<endl
          << "   The daemon looks for a preamble in that order: 1. a file called mainfile.pre, 2. a file called preamble.tex 3. a preamble delimited by \\begin{document} extracted from the main .tex file. If none are present then it falls back to 'no'."<<endl
-         << "   Note: If the files preamble.tex and mainfile.pre exist but are not the preamble (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option." <<endl<<endl
+         << "   Note: If the files preamble.tex and mainfile.pre exist but are not the preamble (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option." <<endl
+         << endl
          << "The 'dependencies' parameters contains a list of files that your main tex file relies on. You can sepcify list of files using jokers, for example '*.tex *.sty'." <<endl<<endl
          << "EXAMPLES:" << endl
          << "  " << progname << " main.tex" << endl
@@ -860,9 +875,11 @@ void ExecuteOptionAfterJob( tstring optionarg )
 		afterjob = DviPng;
     else if( optionarg==_T("dvipspdf") )
 		afterjob = DviPsPdf;
-    else if( optionarg==_T("custom") )
+    else if( optionarg==_T("bibtex") )
+        afterjob = Bibtex;
+    else if (optionarg == _T("custom"))
         afterjob = Custom;
-	else {
+    else {
         optionarg = _T("rest");
 		afterjob = Rest;
 	}
@@ -985,15 +1002,25 @@ DWORD make(AbortableProcessLauncher &launcher, JOB makejob)
         SetTitle(_T("recompiling..."));
         ret = fullcompile(launcher);
     }
-    if( ret==0 ) {
-        if( afterjob == Dvips )
+
+    if (ret == 0) {
+        switch (afterjob) {
+        case Dvips:
             ret = dvips(launcher, _T(""));
-        else if ( afterjob == DviPng )
+            break;
+        case DviPng:
             ret = dvipng(launcher, _T(""));
-        else if ( afterjob == DviPsPdf )
+            break;
+        case DviPsPdf:
             ret = dvipspdf(launcher, _T(""));
-        else if ( afterjob == Custom )
+            break;
+        case Bibtex:
+            ret = bibtex(launcher);
+            break;
+        case Custom:
             ret = custom(launcher, _T(""));
+            break;
+        }
 
         // has gswin32 been launched?
         if( piGsview.dwProcessId ) {
@@ -1237,7 +1264,7 @@ int ExecuteCommand(tstring command)
              << "  r[un] COMMANDLINE  execute a shell command" << endl
              << "  u[sage]            show the help on command line parameters usage" << endl << endl
              << "Options can be configured using the following commands:" << endl
-             << "  afterjob={rest|dvips|dvipng|dvipspdf|custom}" << endl
+             << "  afterjob={rest|bibtex|dvips|dvipng|dvipspdf|custom}" << endl
              << "          job to be executed after latex compilation" << endl
              << "  autodep={yes|no}   automatic dependency detection" << endl
              << "  aux-directory=DIR" << endl
@@ -2852,18 +2879,16 @@ int bibtex(AbortableProcessLauncher &launcher)
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Bibtexing " << texbasename << ".tex...\n";
     tstring cmdline = tstring(_T("bibtex "));
-    if( auxdir != _T("") )
-    {
-        pszStartDir = auxdir.c_str();
-        cmdline += _T("\"") + texbasename + _T("\"") +_T(" -include-directory ..");
-        tcout << fgMsg << " Running '" << cmdline << "' in directory '" << pszStartDir << "'\n" << fgLatex;
-    }
-    else
-    {
+    if (auxdir == _T("") || texLive) { // TeXLive version of latex does not support auxliary directory
         pszStartDir = NULL;
         cmdline += texbasename;
         tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-    }    
+    }
+    else {
+        pszStartDir = auxdir.c_str();
+        cmdline += _T("\"") + texbasename + _T("\"") + _T(" -include-directory ..");
+        tcout << fgMsg << " Running '" << cmdline << "' in directory '" << pszStartDir << "'\n" << fgLatex;
+    }
     LeaveCriticalSection( &cs ); 
     return launcher.launch_and_wait(cmdline.c_str(), pszStartDir);
 }

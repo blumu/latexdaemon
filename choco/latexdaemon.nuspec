@@ -29,7 +29,7 @@
     <bugTrackerUrl>https://github.com/blumu/latexdaemon/issues</bugTrackerUrl>
     <tags>latexdaemon latex tex daemon</tags>
     <summary>LaTeXDaemon speeds-up compilation of LaTeX documents through background monitoring of source files and automatic preamble precompilation.</summary>
-    <description>LaTeXDaemon simplifies and accelerate your LaTeX processing workflow. It runs silently in the background and automatically recompiles your document when a change is detected, so you can focus on editing your document using your favorite file editor while avoiding round trips with the command prompt. Additionally, it speeds up compilation by pre-compiling the preamble section of your LaTeX source that loads packages (`\usepackage{...}`).</description>
+    <description>LaTeXDaemon simplifies and accelerates your LaTeX processing workflow. It runs silently in the background and automatically recompiles your document when a change is detected, so you can focus on editing your document using your favorite file editor while avoiding round trips with the command prompt. Additionally, it speeds up compilation by pre-compiling the preamble section of your LaTeX source that loads packages (`\usepackage{...}`).</description>
     <releaseNotes>First release of LaTeXDaemon as Chocolatey package</releaseNotes>
   </metadata>
   <files>
