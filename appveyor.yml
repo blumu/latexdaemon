@@ -13,6 +13,10 @@ after_build:
   - ps: choco pack choco\latexdaemon.nuspec -version $env:APPVEYOR_BUILD_VERSION;
         Get-ChildItem *.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
 
+skip_tags: true
+pull_requests:
+  do_not_increment_build_number: true
+
 artifacts:
 - path: latexdaemon\Release\*.exe
   name: app
