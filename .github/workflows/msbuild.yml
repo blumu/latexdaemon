@@ -18,12 +18,15 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v1
+
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
     - name: Restore NuGet packages
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: nuget restore ${{env.SOLUTION_FILE_PATH}}
+      
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
