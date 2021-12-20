@@ -5,3 +5,5 @@ latexdaemon/latexdaemon.vcxproj.user
 /.vs/*
 /choco/latexdaemon.*.nupkg
 /latexdaemon/builds/LatexDaemon.*.zip
+.github/workflows/msbuild.yml
+symbolCache.db

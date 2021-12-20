@@ -1,10 +1,15 @@
 #.SYNOPSIS
-#    Patch version file with appveyor version numbers
-if(-not $Env:APPVEYOR_BUILD_VERSION) {
-    throw "Script need to run under appveyor"
+#    Patch version file with target version number
+param( $targetVersion )
+
+if (-not $targetVersion) {
+    $targetVersion = $Env:APPVEYOR_BUILD_VERSION
+    if (-not $targetVersion) {
+        throw "Script need to run under appveyor or version must be specified as parameter"
+    }
 }
 
-$version = $Env:APPVEYOR_BUILD_VERSION -split '\.'
+$version = $targetVersion -split '\.'
 
 $content = Get-Content $PSScriptRoot\..\latexdaemon\version.h2
 $content = $content | ForEach-Object {
@@ -21,5 +26,5 @@ $content | Set-Content -Path $PSScriptRoot\..\latexdaemon\version.h2
 Write-Host "Patching chocolatey nuspec file"
 
 $nuspec = Get-Content "$PSScriptRoot\..\choco\latexdaemon.nuspec" `
-| ForEach-Object { $_ -replace '<version>.*</version>',"<version>$($Env:APPVEYOR_BUILD_VERSION)</version>" }
+| ForEach-Object { $_ -replace '<version>.*</version>', "<version>$($targetVersion)</version>" }
 $nuspec | Set-Content -Path "$PSScriptRoot\..\choco\latexdaemon.nuspec" -Encoding UTF8
