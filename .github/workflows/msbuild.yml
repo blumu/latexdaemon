@@ -30,9 +30,9 @@ jobs:
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
-    - name: Build
-      run: |
-        .\beforebuild.ps1
+    - name: Set version number
+      shell: pwsh
+      run: .\beforebuild.ps1 -targetVersion ${{ steps.get_version.outputs.version-without-v }} -fallbackVersion 0.0.666
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
