@@ -89,7 +89,7 @@ private:
 };
 
 //////////
-/// Constants 
+/// Constants
 
 
 // preference file extension
@@ -269,10 +269,10 @@ tstring output_ext = _T(".dvi");
 
 
 // Default command line arguments for TeX
-tstring texoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120 
+tstring texoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120
 
 // Default command line arguments for pdfTeX
-tstring pdftexoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120 
+tstring pdftexoptions = _T(" -interaction=nonstopmode "); // -max-print-line=120
 
 // default custom argument to be passed to TeX or pdfTeX
 // can be overwritten with the option "custom_args=..."
@@ -303,7 +303,7 @@ typedef struct {
 } MAKETHREADPARAM  ;
 
 // information concerning a directory being watched
-typedef struct { 
+typedef struct {
     HANDLE  hDir;
     TCHAR szPath[_MAX_PATH];
     OVERLAPPED overl;
@@ -313,7 +313,7 @@ typedef struct {
 
 
 // define the ID values to indentify the option
-enum { 
+enum {
     // command line options
     OPT_USAGE, OPT_INI, OPT_WATCH, OPT_AUXDIR, OPT_FORCE, OPT_PREAMBLE, OPT_AFTERJOB, OPT_EXIT,
     // prompt commands
@@ -362,7 +362,7 @@ CSimpleOpt::SOption g_rgOptions[] = {
     { OPT_FILTER,       _T("-filter"),         SO_REQ_CMB },
     { OPT_FILTER,       _T("--filter"),        SO_REQ_CMB },
     { OPT_GSVIEW,       _T("--gsview"),        SO_NONE },
-    { OPT_GSVIEW,       _T("-gsview"),         SO_NONE },    
+    { OPT_GSVIEW,       _T("-gsview"),         SO_NONE },
     SO_END_OF_OPTIONS                   // END
 };
 
@@ -466,7 +466,7 @@ DWORD AbortableProcessLauncher::launch_and_wait(LPCTSTR cmdline, LPCTSTR startDi
         dwRet = GetLastError();
         EnterCriticalSection( &cs );
         tcout << fgErr << "CreateProcess failed ("<< dwRet << ") : " << cmdline <<".\n" << fgNormal;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
     }
 
     free(szCmdline);
@@ -499,13 +499,13 @@ bool IsDirectory(PCTSTR path)
 void ShowUsage() {
     tcout << "USAGE: " << progname << " [options] mainfile.tex [dependencies]" <<endl
          << "List of options:" << endl
-         << " --help" << endl 
+         << " --help" << endl
          << "   Show this help message." <<endl
          << endl
-         << " --aux-directory=DIR" << endl 
+         << " --aux-directory=DIR" << endl
          << "   Use DIR as the directory to write auxiliary files to."<<endl
          << endl
-         << " --watch={yes|no}" << endl 
+         << " --watch={yes|no}" << endl
          << "   If set to 'no' then it compiles the document and exits immediately without watching for file changes."<<endl
          << endl
          << " --exit" << endl
@@ -516,17 +516,17 @@ void ShowUsage() {
          << endl
          << "   . 'fullcompile' forces the compilation of the preamble and the .tex file at the start even when no modification is detected." <<endl
          << endl
-         << " --gsview " << endl 
+         << " --gsview " << endl
          << "   Use Ghostview as a .pdf and .ps viewer (with autorefresh)" << endl
          << endl
-         << " --ini=inifile" << endl 
+         << " --ini=inifile" << endl
          << "   Set 'inifile' as the initialization format file that will be used to compile the preamble." <<endl
          << endl
-         << " --autodep={yes|no}" << endl 
+         << " --autodep={yes|no}" << endl
          << "   Activate the automatic detection of dependencies." << endl
          << endl
-         << " --afterjob={rest|bibtex|dvips|dvipng|dvipspdf|custom}" << endl 
-         << "   Specifies what should be done after a successful compilation of the .tex file." << endl 
+         << " --afterjob={rest|bibtex|dvips|dvipng|dvipspdf|custom}" << endl
+         << "   Specifies what should be done after a successful compilation of the .tex file." << endl
          << "     . 'rest' (default) do nothing." << endl
          << "     . 'bibtex' run bibtex," << endl
          << "     . 'dvips' run dvips on the output dvi file," <<endl
@@ -534,16 +534,16 @@ void ShowUsage() {
          << "     . 'dvips2pdf' run dvips followed by ps2pdf," <<endl
          << "     . 'custom' run a custom command line specified with the '-custom' option," <<endl
          << endl
-         << " --custom=\"COMMAND LINE\"" << endl 
+         << " --custom=\"COMMAND LINE\"" << endl
          << "   Specifies a command line to execute when afterjob is set to the value 'custom'." << endl
          << endl
-         << " --custom_args=arguments" << endl 
+         << " --custom_args=arguments" << endl
          << "   Specifies custom arguments to be passed to the TeX engine." << endl
          << endl
-         << " --filter={highlight|raw|err|warn|err+warn}" << endl 
+         << " --filter={highlight|raw|err|warn|err+warn}" << endl
          << "   Set the latex output filter mode. Default: highlight" <<endl
          << endl
-         << " --preamble={yes|no}" << endl 
+         << " --preamble={yes|no}" << endl
          << "   Activate/deactivate precompilation of the preamble."<<endl
          << "   The daemon looks for a preamble in that order: 1. a file called mainfile.pre, 2. a file called preamble.tex 3. a preamble delimited by \\begin{document} extracted from the main .tex file. If none are present then it falls back to 'no'."<<endl
          << "   Note: If the files preamble.tex and mainfile.pre exist but are not the preamble (i.e. not included with \\input{mainfile.pre} at the beginning of your .tex file) then you must deactivate this option." <<endl
@@ -579,7 +579,7 @@ void ReadDependencies(tstring filename, vector<CFilename> &deps)
 {
     tifstream depFile;
     depFile.open(filename.c_str());
-    if(depFile) {        
+    if(depFile) {
         TCHAR line[_MAX_PATH];
         while(!depFile.eof()){
             depFile.getline(line,_MAX_PATH);
@@ -667,7 +667,7 @@ void RefreshDependencies(bool bPreamble, bool bReplace) {
         AddDeps(new_deps, auto_deps);
     // Compare new_deps and auto_deps
     depChanged = 0 != CompareDeps(new_deps,auto_deps);
-    
+
     vector<CFilename> new_preamb_deps;
     if( bPreamble ) {
         ReadDependencies(GetPreambleDependFilePath().c_str(), new_preamb_deps);
@@ -683,7 +683,7 @@ void RefreshDependencies(bool bPreamble, bool bReplace) {
         if (bPreamble)
             auto_preamb_deps = new_preamb_deps;
 
-        if(Watch) 
+        if(Watch)
             SetEvent(hEvtDependenciesChanged);
     }
 }
@@ -708,7 +708,7 @@ bool CheckFileLoaded()
     if( !FileLoaded ) {
         EnterCriticalSection( &cs );
         tcout << fgErr << "You first need to load a .tex file!\n" << fgNormal;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
         return false;
     }
     else
@@ -734,7 +734,7 @@ bool PreambleFormatFileUptodate()
     if (PreambleType == None) {
         tcout << _T("-Preamble: none\n");
         return false;
-    } 
+    }
     else {
         ///////////////////
         // An external preamble file is used: check if the preamble dependencies have been touched since last compilation
@@ -761,10 +761,10 @@ bool PreambleFormatFileUptodate()
         }
         else if ( PreambleType == Internal ) {
             tcout << _T("-Preamble: internal\n");
-            
+
             // If the format file is older than the preamble file
             if( res == SRC_FRESHER ) {
-                // Read the last checksum of the intenal preamble from some file to be 
+                // Read the last checksum of the intenal preamble from some file to be
                 // generated by the dameon upon recompilation of the preamble
                 // and compare it with the current checksum
                 md5 previousDigest, newDigest;
@@ -817,7 +817,7 @@ void ExecuteOptionIni( tstring optionarg )
         output_ext = _T(".pdf");
     else if ( texinifile == _T("latex") || texinifile == _T("tex") )
         output_ext = _T(".dvi");
-    else 
+    else
         output_ext = _T(".dvi"); // dvi by default
 
     if( FileLoaded ) {
@@ -1027,7 +1027,7 @@ DWORD make(AbortableProcessLauncher &launcher, JOB makejob)
             // look for the gswin32 window
             if( !hwndGsview )
                 EnumThreadWindows(piGsview.dwThreadId, LookForGsviewWindow, NULL);
-            // refresh the gsview window 
+            // refresh the gsview window
             if( hwndGsview )
                 PostMessage(hwndGsview, WM_KEYDOWN, VK_F5, 0xC03F0001);
         }
@@ -1064,13 +1064,13 @@ unsigned __stdcall MakeThread( void *param )
         // restore the backup copy of the .aux file.
         CopyFile(auxbackupfilepath.c_str(), auxfilepath.c_str(), FALSE);
         // restore the backup copy of the .out file.
-        CopyFile(outbackupfilepath.c_str(), outfilepath.c_str(), FALSE);    
+        CopyFile(outbackupfilepath.c_str(), outfilepath.c_str(), FALSE);
     }
-    
-    // restore the prompt    
+
+    // restore the prompt
     print_if_possible(fgPrompt, IsRunning_WatchingThread() ? PROMPT_STRING_WATCH : PROMPT_STRING );
 
-    if( Autodep ) 
+    if( Autodep )
         // Refresh the list of dependencies
         RefreshDependencies(p->makejob == FullCompile, errcode == 0); // add deps if there were error in the compilation, repalce them if there were no error during compilation
 
@@ -1114,7 +1114,7 @@ BOOL CALLBACK FindConsoleEnumWndProc(HWND hwnd, LPARAM lparam)
 HWND MyGetConsoleHWND(void)
 {
 	static HWND hwndConsole = NULL;
-    
+
     if( hwndConsole == NULL )
 	    EnumWindows(FindConsoleEnumWndProc, (LPARAM)&hwndConsole);
 
@@ -1178,11 +1178,11 @@ int ExecuteCommand(tstring command)
 {
     // Read a command from the user
 #define DUMMYCMD        _T("dummy -")
-    PTSTR pszCmdline = (PTSTR) malloc((command.size()+_countof(DUMMYCMD))*sizeof(TCHAR));
+    PTSTR pszCmdline = (PTSTR) malloc((command.size()+_countof(DUMMYCMD)+1)*sizeof(TCHAR));
     _tcscpy(pszCmdline, DUMMYCMD);
     _tcscat(pszCmdline, command.c_str());
 
-    // Convert the command line into an argv table 
+    // Convert the command line into an argv table
     int argc;
     PTSTR *argv = CommandLineToArgv(pszCmdline, &argc);
     // Parse the command line
@@ -1213,7 +1213,7 @@ int ExecuteCommand(tstring command)
         EnterCriticalSection( &cs );
             LPCTSTR optiontext = args.OptionText();
             // remove the extra '-' that we have appened before the command name
-            if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-') 
+            if( args.LastError()== SO_OPT_INVALID && optiontext[0] == '-')
                 optiontext++;
             // don't show error message for the empty command
             if(  optiontext[0] != 0 ) {
@@ -1224,7 +1224,7 @@ int ExecuteCommand(tstring command)
         free(pszCmdline);
         return ERROR_BAD_COMMANDFORMAT;
     }
-    
+
     // default return value
     int iret = ERROR_BASIC_COMMAND_EXECUTED;
     switch( args.OptionId() ) {
@@ -1233,7 +1233,7 @@ int ExecuteCommand(tstring command)
             tcout << fgNormal;
             daemonMode = false; // quit immediately after showing usage info.
             ShowUsage();
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
         break;
     case OPT_HELP:
         EnterCriticalSection( &cs );
@@ -1248,9 +1248,9 @@ int ExecuteCommand(tstring command)
              << "  mi|makeindex       build the index file using makeindex" << endl
              << "  p[s2pdf]           PS -> PDF conversion" << endl
              << "  v[iew]             view the output file (DVI or PDF depending on ini value)" << endl
-             << "  vi|viewdvi         view the DVI file" << endl 
-             << "  vs|viewps          view the PS file" << endl 
-             << "  vf|viewpdf         view the PDF file" << endl 
+             << "  vi|viewdvi         view the DVI file" << endl
+             << "  vs|viewps          view the PS file" << endl
+             << "  vf|viewpdf         view the PDF file" << endl
              << "File managment commands:" << endl
              << "  cu|cleanup         cleanup the files in the auxiliaray directory" << endl
              << "  e[dit]             edit the .tex file" << endl
@@ -1280,7 +1280,7 @@ int ExecuteCommand(tstring command)
              << "  ini=inifile        initial format file (default to latex)" << endl
              << "  preamble={yes|no}  preamble precompilation (requires a file reload)" << endl
              << "  watch={yes|no}     activation of the file modification watching" << endl  << endl;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
         break;
     case OPT_INI:          ExecuteOptionIni(args.OptionArg());              break;
     case OPT_PREAMBLE:     ExecuteOptionPreamble(args.OptionArg());         break;
@@ -1301,7 +1301,7 @@ int ExecuteCommand(tstring command)
     case OPT_VIEWPDF:      view_pdf();                break;
     case OPT_OPENFOLDER:   openfolder();              break;
     case OPT_PWD:          pwd();                     break;
-    
+
     case OPT_MAKEINDEX:
         {
             tstring opt;
@@ -1384,7 +1384,7 @@ int ExecuteCommand(tstring command)
                     ofn.hwndOwner = GetConsoleHWND();
                     ofn.lpstrFile = szFile;
                     //
-                    // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
+                    // Set lpstrFile[0] to '\0' so that GetOpenFileName does not
                     // use the contents of szFile to initialize itself.
                     //
                     ofn.lpstrFile[0] = '\0';
@@ -1396,7 +1396,7 @@ int ExecuteCommand(tstring command)
                     ofn.lpstrInitialDir = NULL;
                     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-                    // Display the Open dialog box. 
+                    // Display the Open dialog box.
 
                     if (GetOpenFileName(&ofn)==TRUE) {
                         if (SG_SUCCESS != nglob.Add(szFile) ) {
@@ -1425,7 +1425,7 @@ err_load:
 
     case OPT_COMPILE:
         {
-            bool started = RestartMakeThread(Compile);
+            const bool started = RestartMakeThread(Compile);
             // wait for the "make" thread to end
             if( started )
                 WaitForSingleObject(hMakeThread, INFINITE);
@@ -1434,7 +1434,7 @@ err_load:
         break;
     case OPT_FULLCOMPILE:
         {
-            bool started = RestartMakeThread(FullCompile);
+            const bool started = RestartMakeThread(FullCompile);
             // wait for the "make" thread to end
             if( started )
                 WaitForSingleObject(hMakeThread, INFINITE);
@@ -1519,7 +1519,7 @@ BOOL IsWow64()
 
     fnIsWow64Process = (LPFN_ISWOW64PROCESS)GetProcAddress(
         GetModuleHandle(TEXT("kernel32")),"IsWow64Process");
-  
+
     if (NULL != fnIsWow64Process)
     {
         if (!fnIsWow64Process(GetCurrentProcess(),&bIsWow64))
@@ -1667,7 +1667,7 @@ int _tmain(int argc, TCHAR *argv[])
             uiFlags |= (unsigned int) args.OptionId();
     }
 
-    int ret = -1;    
+    int ret = -1;
     if( args.FileCount() == 0 ){
         tcout << fgWarning << _T("No input file specified. Type 'l' to open a .tex document.\n") << fgNormal;
     }
@@ -1681,7 +1681,7 @@ int _tmain(int argc, TCHAR *argv[])
     }
 
     if( Watch ) { // If watching has been requested by the user
-        
+
         // and if a valid input file was specified at the command line
         if( ret == 0 )
             RestartWatchingThread(); // then start watching
@@ -1696,7 +1696,7 @@ int _tmain(int argc, TCHAR *argv[])
         tcout << fgMsg << _T("Command completed, exiting.\n") << fgNormal;
     }
 
-exit:	
+exit:
     DeleteCriticalSection(&cs);
     CloseHandle(hEvtAbortMake);
     CloseHandle(hEvtStopWatching);
@@ -1749,10 +1749,10 @@ bool spawn(int argc, PTSTR *argv)
         FALSE,          // Set handle inheritance to FALSE
         CREATE_NEW_CONSOLE,              // No creation flags
         NULL,           // Use parent's environment block
-        NULL,           // Use parent's starting directory 
+        NULL,           // Use parent's starting directory
         &si,            // Pointer to STARTUPINFO structure
         &pi ) ? true : false;          // Pointer to PROCESS_INFORMATION structure
-    
+
     if( bret ) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -1760,7 +1760,7 @@ bool spawn(int argc, PTSTR *argv)
     else {
         EnterCriticalSection( &cs );
         tcout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
     }
 
     free(szCmdline);
@@ -1776,7 +1776,7 @@ bool FindInternalPreamble(DWORD *preamble_len)
     FILE *fp = _tfopen(texfullpath.c_str(), _T("r"));
     if (!fp)
         return false;
-    
+
     TCHAR buff[_countof(PREAMBLE_DELIMITER)+20]; // we are just looking for a line of the form \begin{document} with possible spaces before
     PTSTR p;
     fpos_t linepos;
@@ -1819,7 +1819,7 @@ bool str_skip(PCTSTR *strp, PCTSTR expect)
    }
 }
 
-// Return true if any dependency file was modified 
+// Return true if any dependency file was modified
 // since last time the output file was created
 bool AnyDependencyChanged()
 {
@@ -1876,7 +1876,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     SetTitle(_T("Initialization"));
     tcout << "-Main file: '" << fullpath << "'\n";
     tcout << "-Directory: " << drive << dir << "\n";
-    
+
     FileLoaded = false; // will be set to true when the loading is finished
 
 
@@ -1918,7 +1918,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
                 int iret = _ftscanf(fp, _T("%[^\n]\n"),buff);
                 if( iret != 1 )
                     break;
-                
+
                 cur = buff;
                 // skip spaces
                 str_skip_spaces(&cur);
@@ -1940,7 +1940,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     }
 
 
-    if( depglob.FileCount()>1 ) 
+    if( depglob.FileCount()>1 )
         tcout << "-Dependencies manually added:\n";
     else
         tcout << "-No additional dependency specified.\n";
@@ -1961,7 +1961,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     // is preamble-precompilation activated?
     if( PreamblePrecompilation ) {
         // Check for the presence of the external preamble file.
-        
+
         // compare the timestamp of the preamble.tex file and the format file
         preamble_filename = tstring(mainfile) + _T(".") DEFAULTPREAMBLE1_EXT;
         preamble_basename = tstring(mainfile);
@@ -2001,7 +2001,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
     SetPreambleFormatName(); // set the name of the preamble format file
     if( PreambleFormatFileUptodate() )
         job = FullCompile;
-    
+
     // Initialize the .tex file dependency list
     ReadDependencies(GetDependFilePath().c_str(), auto_deps);
 
@@ -2011,7 +2011,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
 
         ///////////////////
         // Check if the .tex file dependencies were touched since last compilation
-        
+
         // First check if the main file has been modified since the creation of the dvi file
         int maintex_comp = compare_timestamp((texbasename+_T(".tex")).c_str(), (texbasename+output_ext).c_str());
 
@@ -2027,7 +2027,7 @@ int loadfile( CSimpleGlob &depglob, JOB initialjob )
             tcout << fgMsg << "+ the main .tex file has been modified since last run. Let's recompile...\n";
             job = Compile;
         }
-        else if(job != FullCompile) { // maintex_comp == OUT_FRESHER 
+        else if(job != FullCompile) { // maintex_comp == OUT_FRESHER
             if (AnyDependencyChanged()) {
                 job = Compile;
             }
@@ -2085,7 +2085,7 @@ tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
 /// Original TeX file inclusion hooking method
                 // Create a backup of the original \include command
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\DAEMON@ORG@include\\@undefined\\let\\DAEMON@ORG@include\\include\\fi") 
+                _T(" \\ifx\\DAEMON@ORG@include\\@undefined\\let\\DAEMON@ORG@include\\include\\fi")
 
                 // same for input
                 _T(" \\ifx\\DAEMON@ORG@input\\@undefined\\let\\DAEMON@ORG@input\\input\\fi")
@@ -2111,7 +2111,7 @@ tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
 
                 // Create a backup of the original \InputIfFileExists command
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
-                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+                _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi")
                 + ((PreambleType == External)
                     ?   // A hook for \input that does nothing the first time it's being called
                         // (the first call to \input{...} corresponds to the inclusion of the preamble)
@@ -2132,14 +2132,14 @@ tstring GetInputHookTeXMacro(tstring SH = _T("#")) {
     }
     else if( PreambleType == External ) {
         // we just need to hook the first call to \input{..} in order to prevent the preamble from being loaded
-        return 
+        return
 #ifdef TEXHOOK_ORIGINALMETHOD
             _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
             _T(" \\def\\input{\\@ifnextchar\\bgroup\\DAEMON@input\\DAEMON@@input}")
             _T(" \\def\\DAEMON@input")+SH+_T("1{\\let\\input\\DAEMON@@input }")
 #else
             // Create a backup of the original \InputIfFileExists command
-            _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi") 
+            _T(" \\ifx\\DAEMON@ORG@InputIfFileExists\\@undefined\\let\\DAEMON@ORG@InputIfFileExists\\InputIfFileExists\\fi")
             // A hook that does nothing the first time it's being called and then behaves normally
             _T(" \\long\\def\\DAEMON@InputIfFileExists")+SH+_T("1")+SH+_T("2")+SH+_T("3{\\ifx\\DAEMON@i\\@undefined\\def\\DAEMON@i{1}\\else\\DAEMON@ORG@InputIfFileExists{")+SH+_T("1}{")+SH+_T("2}{")+SH+_T("3}\\fi}")
             _T(" \\let\\InputIfFileExists\\DAEMON@InputIfFileExists")
@@ -2259,7 +2259,7 @@ DWORD fullcompile(AbortableProcessLauncher &launcher)
                 // create a backup of the original \input command
                 // (the \ifx test avoids to create a loop in case another hooking has already been set)
                 _T(" \\ifx\\DAEMON@@input\\@undefined\\let\\DAEMON@@input\\input\\fi")
-                                                                                         
+
                 // same for \include
                 _T(" \\ifx\\DAEMON@@include\\@undefined\\let\\DAEMON@@include\\include\\fi")
 
@@ -2269,7 +2269,7 @@ DWORD fullcompile(AbortableProcessLauncher &launcher)
 
                 _T(" \\def\\include#1{\\immediate\\write\\preambledepfile{#1}\\DAEMON@@include #1}")
                 ;
-            
+
             autodep_post = _T(" \\immediate\\closeout\\preambledepfile")  // Close the dependency file
                            _T(" \\let\\input\\DAEMON@@input")             // Restore the original \input
                            _T(" \\let\\include\\DAEMON@@include");        //    and \include commands.
@@ -2289,60 +2289,83 @@ DWORD fullcompile(AbortableProcessLauncher &launcher)
         else // if( PreambleType == Internal )
         {
             /// The following bits of code are a modification of the mylatex package
-            latex_pre = TEX_MAKEATLETTER + autodep_pre + 
-// Save the original definitions.
-_T("\\let\\ORGdocument\\document")
-_T("\\let\\ORGopenout\\openout")
-//_T("\\let\\ORGcloseout\\closeout")
+            latex_pre = TEX_MAKEATLETTER + autodep_pre +
+                        // Save the original definitions.
+                        _T("\\let\\ORGdocument\\document")
+                        _T("\\let\\ORGopenout\\openout")
+                        //_T("\\let\\ORGcloseout\\closeout")
 
-// Version of \document to use on normal run
-//_T("\\let\\DAEMONdocument")
-//+ _T("\\message{LaTeX Warning: **************DAEMONdocument^^J}")
-//+ GetInputHookTeXMacro(_T("##")) 
-//    + _T("\\ORGdocument")
+                        // Version of \document to use on normal run
+                        //_T("\\let\\DAEMONdocument")
+                        //+ _T("\\message{LaTeX Warning: **************DAEMONdocument^^J}")
+                        //+ GetInputHookTeXMacro(_T("##"))
+                        //    + _T("\\ORGdocument")
 
-// The version of \document to use on the initex run.
-// Just preloads some fonts, puts back \document and \openout,
-// sets up the banner to display the file list of files preloaded,
-// then sets up some special catcodes so the preamble will be
-// skipped on normal runs with the new format.
-_T("\\def\\document{\\endgroup")
-  + autodep_post +
-// Force some font preloading.
- _T(" {\\setbox\\z@\\hbox{")
-  _T(" $$") // math (not bold, some setups don't have \boldmath)
-  _T(" \\normalfont") // normal
-   _T(" {\\ifx\\large\\@undefined\\else\\large\\fi") // large and footnote
-   _T(" \\ifx\\footnotesize\\@undefined\\else\\footnotesize\\fi}")
-   _T(" {\\bfseries\\itshape}") // bold and bold italic
-   _T(" {\\itshape}") // italic
-   _T(" \\ttfamily") // monospace
-   _T(" \\sffamily") // sans serif
-   _T(" }}")
- _T("\\let\\document\\ORGdocument")
- _T("\\let\\openout\\ORGopenout")
- //_T("\\let\\closeout\\ORGcloseout")
- _T("\\makeatother")
- _T("\\catcode`\\\\=13\\relax")
- _T("\\catcode`\\#=12\\relax")
- _T("\\catcode`\\ =9\\relax")
- _T("\\dump}")
+                        /////
+                        // 2020-10-01 hook fix taken from mylatex package:
+                        // https://github.com/davidcarlisle/dpctex/commit/e6cfd96c1191f6196dac95fcd16a793ab3d5deb6#diff-db0b45f0ccf9922ed1bb44df31314f2a8b3e64229df8cb084a7e7a058bc11675
+                        _T("\\ifx\\@execute@begin@hook\\@undefined")
+                        _T("\\else")
+                        _T("\\let\\MYLATEX@execute@begin@hook\\@execute@begin@hook")
+                        _T("\\def\\@execute@begin@hook#1{}")
+                        _T("\\fi")
+                        ///////
 
-// In principle \openout stream= filename need not be space terminated,
-// and need not be immediate, but this covers \makeindex \makeglossary
-// and index package's \newindex which are all the cases of \openout
-// that occur before \begin{document} that I could see.
-// Thanks to Ross Moore for pointing out \AtBeginDocument is too late
-// eg changebar package *closes* the stream in \AtBeginDocument, so need
-// to make sure it is opened before that. Make a special purpose hook.
-_T("\\def\\openout#1 {")
-  _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }")
-  _T("\\immediate\\ORGopenout#1 ")
-_T("}")
-_T("\\let\\DAEMONopens\\@empty")
+                        // The version of \document to use on the initex run.
+                        // Just preloads some fonts, puts back \document and \openout,
+                        // sets up the banner to display the file list of files preloaded,
+                        // then sets up some special catcodes so the preamble will be
+                        // skipped on normal runs with the new format.
+                        _T("\\def\\document{") +
 
-// TODO remove the file that are closed from the list \DAEMONopens
-/*
+                        // This would cause a LaTeX compilation error with the latest
+                        // version of Miktex (e.g. >= 21.8) if not for the 
+                        // 2020-10-01 hook fix workaround above. See https://github.com/blumu/latexdaemon/issues/37
+                        _T("\\endgroup") +
+
+                        autodep_post +
+                        // Force some font preloading.
+                        _T(" {\\setbox\\z@\\hbox{")
+                        _T(" $$")                                         // math (not bold, some setups don't have \boldmath)
+                        _T(" \\normalfont")                               // normal
+                        _T(" {\\ifx\\large\\@undefined\\else\\large\\fi") // large and footnote
+                        _T(" \\ifx\\footnotesize\\@undefined\\else\\footnotesize\\fi}")
+                        _T(" {\\bfseries\\itshape}") // bold and bold italic
+                        _T(" {\\itshape}")           // italic
+                        _T(" \\ttfamily")            // monospace
+                        _T(" \\sffamily")            // sans serif
+                        _T(" }}")
+                        _T("\\let\\document\\ORGdocument")
+                        _T("\\let\\openout\\ORGopenout")
+                        //_T("\\let\\closeout\\ORGcloseout")
+
+                        /////
+                        // 2020-10-01 hook fix taken from mylatex package:
+                        // https://github.com/davidcarlisle/dpctex/commit/e6cfd96c1191f6196dac95fcd16a793ab3d5deb6#diff-db0b45f0ccf9922ed1bb44df31314f2a8b3e64229df8cb084a7e7a058bc11675
+                        _T("\\let\\@execute@begin@hook\\MYLATEX@execute@begin@hook")
+                        /////
+
+                        _T("\\makeatother")
+                        _T("\\catcode`\\\\=13\\relax")
+                        _T("\\catcode`\\#=12\\relax")
+                        _T("\\catcode`\\ =9\\relax")
+                        _T("\\dump}")
+
+                        // In principle \openout stream= filename need not be space terminated,
+                        // and need not be immediate, but this covers \makeindex \makeglossary
+                        // and index package's \newindex which are all the cases of \openout
+                        // that occur before \begin{document} that I could see.
+                        // Thanks to Ross Moore for pointing out \AtBeginDocument is too late
+                        // eg changebar package *closes* the stream in \AtBeginDocument, so need
+                        // to make sure it is opened before that. Make a special purpose hook.
+                        _T("\\def\\openout#1 {")
+                        _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1 }")
+                        _T("\\immediate\\ORGopenout#1 ")
+                        _T("}")
+                        _T("\\let\\DAEMONopens\\@empty")
+
+                        // TODO remove the file that are closed from the list \DAEMONopens
+                        /*
 _T("\\def\\closeout#1=#2 {")
   _T("\\g@addto@macro\\DAEMONopens{\\immediate\\openout#1=#2 }")
   //_T("\\g@addto@macro\\DAEMONclose{\\immediate\\openout#1 }")
@@ -2350,50 +2373,48 @@ _T("\\def\\closeout#1=#2 {")
 _T("}")
 */
 
+                        // Templates for ending the `preamble skipping process'.
+                        _T("\\def\\MARKbegin{\\begin{document}}")
+                        // mark for a custom 'end of preamble'
+                        _T("\\def\\MARKeop{ENDOFPREAMBLE}")
 
-// Templates for ending the `preamble skipping process'.
-_T("\\def\\MARKbegin{\\begin{document}}")
-// mark for a custom 'end of preamble'
-_T("\\def\\MARKeop{ENDOFPREAMBLE}")
+                        _T("\\def\\DAEMONbegin{ ") +
+                        GetInputHookTeXMacro(_T("##")) +
+                        _T(" \\begin{document}}")
 
-
-_T("\\def\\DAEMONbegin{ ")
-   + GetInputHookTeXMacro(_T("##")) +
-_T(" \\begin{document}}")
-
-// While the preamble is being skipped, the EOL is active
-// and defined to grab each line and inspect it looking
-// for \begin{document} or mylatex lines.
-// The special catcodes required are not enabled until after the
-// first TeX command in the file, so as to avoid problems with
-// the special processing that TeX does on the first line, choosing
-// the format, or the file name etc.
-_T("{\\catcode`\\^^M=\\active")
- _T("\\catcode`\\/=0 ")
- _T("/catcode`\\\\=13 ")
- _T("/gdef\\{/catcode`/\\=0 /catcode`/^^M=13 /catcode`/%=9 ^^M}")
- _T("/long/gdef^^M#1^^M{")
- _T("/def/MYline{#1}")
-// If hit a comment `ENDOFPREAMBLE' then do as if you'd hit \begin{document}
-// except don't run the real \document as a \begin{document} will be
-// coming up later in the file at the end of the preamble.
- /*_T("/ifx/MYline/MARKeop")
+                        // While the preamble is being skipped, the EOL is active
+                        // and defined to grab each line and inspect it looking
+                        // for \begin{document} or mylatex lines.
+                        // The special catcodes required are not enabled until after the
+                        // first TeX command in the file, so as to avoid problems with
+                        // the special processing that TeX does on the first line, choosing
+                        // the format, or the file name etc.
+                        _T("{\\catcode`\\^^M=\\active")
+                        _T("\\catcode`\\/=0 ")
+                        _T("/catcode`\\\\=13 ")
+                        _T("/gdef\\{/catcode`/\\=0 /catcode`/^^M=13 /catcode`/%=9 ^^M}")
+                        _T("/long/gdef^^M#1^^M{")
+                        _T("/def/MYline{#1}")
+                        // If hit a comment `ENDOFPREAMBLE' then do as if you'd hit \begin{document}
+                        // except don't run the real \document as a \begin{document} will be
+                        // coming up later in the file at the end of the preamble.
+                        /*_T("/ifx/MYline/MARKeop")
    _T("/let/MARKbegin/relax")
    _T("/let/MYline/relax")
  _T("/fi")*/
-// If hit \begin{document} put things back as they should be, run the
-// hook with any save \openouts then do the original \document code.
- _T("/ifx/MYline/MARKbegin")
-   _T("/catcode`/^^M=5/relax")
-   _T("/let^^M/par/relax")
-   _T("/catcode`/#=6/relax")
-   _T("/catcode`/%=14/relax")
-   _T("/catcode`/ =10/relax")
-   _T("/expandafter/DAEMONopens/expandafter/DAEMONbegin")
- _T("/else")
-// Otherwise grab the next line to look at.
-   _T("/expandafter^^M")
- _T("/fi}} ");
+                        // If hit \begin{document} put things back as they should be, run the
+                        // hook with any save \openouts then do the original \document code.
+                        _T("/ifx/MYline/MARKbegin")
+                        _T("/catcode`/^^M=5/relax")
+                        _T("/let^^M/par/relax")
+                        _T("/catcode`/#=6/relax")
+                        _T("/catcode`/%=14/relax")
+                        _T("/catcode`/ =10/relax")
+                        _T("/expandafter/DAEMONopens/expandafter/DAEMONbegin")
+                        _T("/else")
+                        // Otherwise grab the next line to look at.
+                        _T("/expandafter^^M")
+                        _T("/fi}} ");
 
             latex_post = _T("");
         }
@@ -2426,12 +2447,12 @@ _T("{\\catcode`\\^^M=\\active")
             + _T(" -ini \"&") + texinifile + _T("\"")
             + _T(" \"")
                 + latex_pre
-                + _T("\\input ") + preamble_filename 
+                + _T("\\input ") + preamble_filename
                 + latex_post
             + _T("\"");
         tcout << fgMsg << "-- Creation of the format file...\n";
         tcout << "[running '" << cmdline << "']\n" << fgLatex;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
         DWORD ret = launcher.launch_and_wait(cmdline.c_str(), NULL, Filter);
 
         // TexLive ignores the -fmt parameter so we need to rename the format file.
@@ -2472,13 +2493,13 @@ DWORD compile(AbortableProcessLauncher &launcher)
 
 
     tstring texengine;  // tex engine to run
-    tstring formatfile; // formatfile to preload before reading the main .tex file    
+    tstring formatfile; // formatfile to preload before reading the main .tex file
     tstring latex_pre;  // the latex code that will be executed before the main .tex file
 
     // are we using a precompiled preamble?
     if( PreambleType != None ) {
         // load the precompiled preamble format file with the pdftex engine
-        texengine = _T("pdftex");        
+        texengine = _T("pdftex");
         formatfile = preamble_format_basename;
     }
     else {
@@ -2514,10 +2535,10 @@ DWORD compile(AbortableProcessLauncher &launcher)
                         + auxopt
                         + (( texinifile.compare(_T("pdflatex")) == 0 ) ? pdftexoptions : texoptions)
                         + (customtexargs.empty() ? _T("") : customtexargs + _T(" "));
-    
+
     if( formatfile != _T("") )
         cmdline += _T(" \"&") + auxdir + _T("\\") + formatfile + _T("\"");
-    if( latex_pre == _T("") ) // && latex_post == _T("") ) 
+    if( latex_pre == _T("") ) // && latex_post == _T("") )
         cmdline += _T(" \"") + texbasename + _T(".tex\"");
     else
         cmdline += _T(" \"") + latex_pre + _T(" \\input \\\"")+texbasename+_T(".tex\\\" \"");
@@ -2525,12 +2546,12 @@ DWORD compile(AbortableProcessLauncher &launcher)
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- Compilation of " << texbasename << ".tex ...\n";
     tcout << fgMsg << "[running '" << cmdline << "']\n" << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
-    // Launch the latex compilation 
+    // Launch the latex compilation
     DWORD ret = launcher.launch_and_wait(cmdline.c_str(), NULL, Filter);
 
-    // if the compilation was aborted (because some source file has changed in the meantime) 
+    // if the compilation was aborted (because some source file has changed in the meantime)
     // then do not do any postprocessing
     if (ret==-1)
         return -1;
@@ -2539,15 +2560,15 @@ DWORD compile(AbortableProcessLauncher &launcher)
     // If auxiliary files where stored in a subdirectory then retrieve the pdfsync file
     if( auxdir != _T("") ) {
         tstring auxdirpath = GetAuxDirPath();
-        // if a .pdfsync file has been generated 
+        // if a .pdfsync file has been generated
         tstring syncfile = auxdirpath+_T("\\")+texbasename+_T(".pdfsync");
         if( FileExists(syncfile.c_str()) ) {
           // then move it in the same folder as the .pdf file
           if( !MoveFileEx( syncfile.c_str(), (texdir+_T("\\")+texbasename+_T(".pdfsync")).c_str(), MOVEFILE_REPLACE_EXISTING) ) {
-              DWORD err = GetLastError();
+              const DWORD err = GetLastError();
               EnterCriticalSection( &cs );
               tcout << fgErr << "Cannot move .pdfsync file file (MoveFileEx failed with error code "<< err << ")\n" << fgNormal;
-              LeaveCriticalSection( &cs ); 
+              LeaveCriticalSection( &cs );
               return err;
           }
         }
@@ -2562,14 +2583,14 @@ BOOL CALLBACK LookForGsviewWindow(HWND hwnd, LPARAM lparam)
     DWORD pid;
     TCHAR szClass[15];
     GetWindowThreadProcessId(hwnd, &pid);
-    RealGetWindowClass(hwnd, szClass, sizeof(szClass));
+    RealGetWindowClass(hwnd, szClass, sizeof(szClass)/sizeof(TCHAR));
     if( _tcscmp(szClass, _T("gsview_class")) == 0 ) {
         hwndGsview = FindWindowEx(hwnd, NULL, _T("gsview_img_class"), NULL);
     }
     return TRUE;
 }
 
-// start gsview, 
+// start gsview,
 int start_gsview(tstring filename)
 {
     tstring cmdline = gsview + _T(" ") + filename;
@@ -2581,7 +2602,7 @@ int start_gsview(tstring filename)
     ZeroMemory( &piGsview, sizeof(piGsview) );
 
 
-    // Start the child process. 
+    // Start the child process.
     if( !CreateProcess( NULL,   // No module name (use command line)
         szCmdline,      // Command line
         NULL,           // Process handle not inheritable
@@ -2590,13 +2611,13 @@ int start_gsview(tstring filename)
         0,
         //CREATE_NEW_CONSOLE,              // No creation flags
         NULL,           // Use parent's environment block
-        NULL,           // Use parent's starting directory 
+        NULL,           // Use parent's starting directory
         &si,            // Pointer to STARTUPINFO structure
         &piGsview )           // Pointer to PROCESS_INFORMATION structure
     ) {
         EnterCriticalSection( &cs );
         tcout << fgErr << "CreateProcess failed ("<< GetLastError() << ") : " << cmdline <<".\n" << fgNormal;
-        LeaveCriticalSection( &cs ); 
+        LeaveCriticalSection( &cs );
         free(szCmdline);
         piGsview.hProcess = piGsview.hThread = NULL;
         piGsview.dwThreadId = 0;
@@ -2618,7 +2639,7 @@ int shellfile_open(tstring filename)
 {
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- view " << filename << " ...\n";
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     tstring file = texdir+filename;
     SHELLEXECUTEINFO shei = {0};
     shei.cbSize = sizeof(SHELLEXECUTEINFO);
@@ -2641,7 +2662,7 @@ int view_ps()
 
     if( UseGswin32 )
         return start_gsview(texbasename+_T(".ps"));
-    else 
+    else
         return shellfile_open(texbasename+_T(".ps"));
 
 }
@@ -2661,7 +2682,7 @@ int view_dvi()
     tstring file=texbasename+_T(".dvi");
     EnterCriticalSection( &cs );
     tcout << fgMsg << _T("-- view ") << file << _T(" ...\n");
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
     tstring filepath = texdir+file;
     SHELLEXECUTEINFO shei = {0};
@@ -2685,7 +2706,7 @@ int view_pdf()
 
     if( UseGswin32 )
         return start_gsview(texbasename+_T(".pdf"));
-    else 
+    else
         return shellfile_open(texbasename+_T(".pdf"));
 }
 
@@ -2698,7 +2719,7 @@ int edit()
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- editing " << texbasename << ".tex...\n";
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
     SHELLEXECUTEINFO shei = {0};
     shei.cbSize = sizeof(SHELLEXECUTEINFO);
@@ -2721,10 +2742,10 @@ int cleanup()
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- cleaning up...\n";
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
     if( auxdir != _T("") )
-        auxdir+_T("\\");
+        auxdir+=_T("\\");
 
     static PCTSTR clean_ext[] = { _T(".toc"), _T(".tdo"), _T(".out"), _T(".not"), _T(".lot"),
                                   _T(".aux"), _T(".dep"), _T(".idx"), _T(".lof"), _T(".log"),
@@ -2754,7 +2775,7 @@ int cleanup()
     EnterCriticalSection( &cs );
     tcout << fgMsg << n << " file(s) deleted from '" << auxdir << "\\'. \n";
     tcout << fgMsg << m << " file(s) deleted from '" << texdir << "\\'. \n";
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
     return 0;
 }
@@ -2767,7 +2788,7 @@ int openfolder()
 
     EnterCriticalSection( &cs );
     tcout << fgMsg << "-- open directory " << texdir << " ...\n";
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
 
     SHELLEXECUTEINFO shei = {0};
     shei.cbSize = sizeof(SHELLEXECUTEINFO);
@@ -2793,7 +2814,7 @@ int ps2pdf(AbortableProcessLauncher &launcher, tstring opt)
     tcout << fgMsg << "-- Converting " << texbasename << ".ps to pdf...\n";
     tstring cmdline = tstring(_T("ps2pdf "))+ opt + _T(" ") + texbasename+_T(".ps");
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str());
 }
 
@@ -2807,7 +2828,7 @@ int dvips(AbortableProcessLauncher &launcher, tstring opt)
     tcout << fgMsg << _T("-- Converting ") << texbasename << _T(".dvi to postscript...\n");
     tstring cmdline = tstring(_T("dvips "))+texbasename+_T(".dvi ") + opt + _T("-o ")+texbasename+_T(".ps");
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str());
 }
 
@@ -2828,7 +2849,7 @@ int dvipspdf(AbortableProcessLauncher &launcher, tstring opt)
         tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
         int ret = launcher.launch_and_wait(cmdline.c_str());
     }
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return ret;
 }
 
@@ -2842,7 +2863,7 @@ int dvipng(AbortableProcessLauncher &launcher, tstring opt)
     tcout << fgMsg << "-- Converting " << texbasename << ".dvi to PNG...\n";
     tstring cmdline = tstring(_T("dvipng "))+texbasename+_T(".dvi ") + opt;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str());
 }
 
@@ -2856,7 +2877,7 @@ int custom(AbortableProcessLauncher &launcher, tstring opt)
     tcout << fgMsg << "-- Run custom command on " << texbasename << ".tex\n";
     tstring cmdline = customcmd+_T(" ") +texbasename+_T(".tex ") + opt;
     tcout << fgMsg << _T(" Running '") << cmdline << _T("'\n") << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str());
 }
 
@@ -2865,7 +2886,7 @@ int shell(AbortableProcessLauncher &launcher, tstring cmd)
 {
     EnterCriticalSection( &cs );
     tcout << fgMsg << _T(" Running shell command '") << cmd << _T("'\n") << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmd.c_str());
 }
 
@@ -2889,7 +2910,7 @@ int bibtex(AbortableProcessLauncher &launcher)
         cmdline += _T("\"") + texbasename + _T("\"") + _T(" -include-directory ..");
         tcout << fgMsg << " Running '" << cmdline << "' in directory '" << pszStartDir << "'\n" << fgLatex;
     }
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str(), pszStartDir);
 }
 
@@ -2907,7 +2928,7 @@ int makeindex(AbortableProcessLauncher &launcher, tstring opt)
         cmdline += auxdir+_T("\\");
     cmdline += texbasename;
     tcout << fgMsg << " Running '" << cmdline << "'\n" << fgLatex;
-    LeaveCriticalSection( &cs ); 
+    LeaveCriticalSection( &cs );
     return launcher.launch_and_wait(cmdline.c_str());
 }
 
@@ -2931,7 +2952,7 @@ bool RestartMakeThread( JOB makejob ) {
 
     // Create a new "make" thread.
     //  Note: it is necessary to dynamically allocate a MAKETHREADPARAM structure
-    //  otherwise, if we pass the address of a locally defined variable as a parameter to 
+    //  otherwise, if we pass the address of a locally defined variable as a parameter to
     //  _beginthreadex, the content of the structure may change
     //  by the time the make texbasenamethread is created (since the current thread runs concurrently).
     MAKETHREADPARAM *p = new MAKETHREADPARAM;
@@ -2958,9 +2979,9 @@ WATCHDIRINFO *CreateWatchDir(PCTSTR dirpath)
         NULL, // security descriptor
         OPEN_EXISTING, // how to create
         FILE_FLAG_BACKUP_SEMANTICS  | FILE_FLAG_OVERLAPPED , // file attributes
-        NULL // file with attributes to copy 
+        NULL // file with attributes to copy
       );
-  
+
     memset(&pwdi->overl, 0, sizeof(pwdi->overl));
     pwdi->overl.hEvent = CreateEvent(NULL,FALSE,FALSE,NULL);
 
@@ -2993,7 +3014,7 @@ std::vector<CFilename> GetDocumentDependencies()
     // Add the manual dependencies (the first one is the main tex file)
     for (vector<CFilename>::iterator it = static_deps.begin(); it != static_deps.end(); it++)
         deps.push_back(*it);
-    
+
     // load the depencies automatically generated by the last compilation of the main tex file
     if (Autodep) {
         for (vector<CFilename>::iterator it = auto_deps.begin(); it != auto_deps.end(); it++)
@@ -3029,8 +3050,8 @@ unsigned __stdcall WatchingThread( void* param )
 
     EnterCriticalSection(&cs);
     tcout << fgMsg << "\n-- Watching files for change...\n" << fgNormal;
-    LeaveCriticalSection( &cs ); 
- 
+    LeaveCriticalSection( &cs );
+
     // Iterate this loop every time the dependencies change
     bool bContinue = true;
     while( bContinue ) {
@@ -3038,7 +3059,7 @@ unsigned __stdcall WatchingThread( void* param )
 
         // Dependencies of the main .tex file
         vector<CFilename> deps = GetDocumentDependencies();
-       
+
         // Calculate the digest of every dependency file
         md5 *dg_deps = GetDependencyDigests(deps);
 
@@ -3060,7 +3081,7 @@ unsigned __stdcall WatchingThread( void* param )
         tstring bblfilename = texbasename + _T(".bbl");
         md5 dg_bbl;
         dg_bbl.DigestFile(bblfilename.c_str());
-    	
+
         // Reset the hEvtDependenciesChanged event so that it can be set if
         // some thread requires to notify a dependency change
         ResetEvent(hEvtDependenciesChanged);
@@ -3105,7 +3126,7 @@ unsigned __stdcall WatchingThread( void* param )
             }
             else if ( dwObj >= nHdReserved && dwObj < nWdi+nHdReserved) {
                 iTriggeredDir = dwObj-nHdReserved;
-            }            
+            }
             else {
                 // BUG!
                 bContinue = false;
@@ -3141,7 +3162,7 @@ unsigned __stdcall WatchingThread( void* param )
             JOB makejob = Rest;
             FILE_NOTIFY_INFORMATION *pFileNotify;
             pFileNotify = (PFILE_NOTIFY_INFORMATION)&watchdirs[iTriggeredDir]->buffer[1-watchdirs[iTriggeredDir]->curBuffer];
-            while( pFileNotify ) { 
+            while( pFileNotify ) {
                 pFileNotify->FileName[min(pFileNotify->FileNameLength/sizeof(WCHAR), _MAX_FNAME-1)] = 0;
 
                 PTSTR pFilename;
@@ -3182,14 +3203,14 @@ unsigned __stdcall WatchingThread( void* param )
                             // if it is the main tex file and if the preamble is internal then check whether the checksum of the preamble has changed
                             if (i == 0 && PreambleType == Internal && dg_new.DigestFile(modifiedfile, preamble_size) && (dg_preamble != dg_new)) {
                                 if (FindInternalPreamble(&preamble_size)) {
-                                    // The size of the preamble may have changed since last time, so we recalculate 
+                                    // The size of the preamble may have changed since last time, so we recalculate
                                     // the digest with the new preamble size.
                                     dg_preamble.DigestFile(modifiedfile, preamble_size);
                                 }
                                 print_if_possible(fgDepFile, tstring(_T("+ The preamble of \"")) + modifiedfile.Relative(texdir) + _T("\" has changed.\n") );
                                 makejob = max(FullCompile, makejob);
 
-                            } 
+                            }
                             else if ( dg_new.DigestFile(modifiedfile) && (dg_deps[i]!=dg_new) ) {
                                 dg_deps[i] = dg_new;
                                 print_if_possible(fgDepFile, tstring(_T("+ \"")) + modifiedfile.Relative(texdir) + _T("\" changed (dependency file).\n") );
@@ -3235,7 +3256,7 @@ next_entry:
 
         }
 
-        
+
         // Cleanup handles
 
         for(size_t i=0; i<nWdi;i++) {
@@ -3247,9 +3268,7 @@ next_entry:
         delete dg_deps;
         delete dg_preamb_deps;
     }
-    
+
     _endthreadex( 0 );
     return 0;
 }
-
-
