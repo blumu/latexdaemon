@@ -6,7 +6,7 @@
 // extract the extension part from a filepath
 // the result is copied to pszExtFileName if pszExtFileName!=NULL
 // the function returns a pointer to the extension part in pszPath
-PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName )
+PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName ) noexcept
 {
 	for (size_t cbPath = _tcslen(pszPath); cbPath>0; cbPath--) {
 
@@ -28,7 +28,7 @@ PTSTR GetFileExtPart( PTSTR pszPath, SIZE_T size, PTSTR pszExtFileName )
 // Extrait le nom du fichier a partir d'un chemin complet.
 //
 // Retourne un pointeur sur le nom du fichier dans pszPath.
-PCTSTR GetFileBaseNamePart( PCTSTR pszPath )
+PCTSTR GetFileBaseNamePart( PCTSTR pszPath ) noexcept
 {
     size_t cbPath;
 
@@ -43,7 +43,7 @@ PCTSTR GetFileBaseNamePart( PCTSTR pszPath )
 }
 
 // Obtient le nom du repertoire (sans le nom du fichier) et retourne le dans pszDir
-BOOL GetDirectory (PCTSTR pszFile, PTSTR pszDir, size_t wMaxSize)
+BOOL GetDirectory (PCTSTR pszFile, PTSTR pszDir, size_t wMaxSize) noexcept
 {
     PCTSTR pszBaseName = GetFileBaseNamePart(pszFile);
 

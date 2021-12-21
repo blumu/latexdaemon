@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27004.2005
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32002.185
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "latexdaemon", "latexdaemon\latexdaemon.vcxproj", "{D0C89767-D67A-4557-BB8B-7525999C1FC1}"
 EndProject
@@ -10,6 +10,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitignore = .gitignore
 		appveyor.yml = appveyor.yml
 		LICENSE.md = LICENSE.md
+		.github\workflows\msbuild.yml = .github\workflows\msbuild.yml
 		README.md = README.md
 		THIRDPARTY.md = THIRDPARTY.md
 	EndProjectSection
@@ -18,6 +19,18 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Build", "Build", "{1092A1A9
 	ProjectSection(SolutionItems) = preProject
 		build\beforebuild.ps1 = build\beforebuild.ps1
 		build\build.cmd = build\build.cmd
+		build\getver.cmd = build\getver.cmd
+		build\setenv.cmd = build\setenv.cmd
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".github", ".github", "{66B357EE-9083-4277-A0DB-DCE8A2D07196}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\msbuild.yml = .github\workflows\msbuild.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{34DEBA09-335B-4DA1-9A90-6726EA561AA7}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\msbuild.yml = .github\workflows\msbuild.yml
 	EndProjectSection
 EndProject
 Global
@@ -31,6 +44,7 @@ Global
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Debug|Win32.ActiveCfg = Debug|Win32
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Debug|Win32.Build.0 = Debug|Win32
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Debug|x64.ActiveCfg = Debug|Win32
+		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Debug|x64.Build.0 = Debug|Win32
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Release|Win32.ActiveCfg = Release|Win32
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Release|Win32.Build.0 = Release|Win32
 		{D0C89767-D67A-4557-BB8B-7525999C1FC1}.Release|x64.ActiveCfg = Release|Win32
@@ -40,6 +54,8 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{1092A1A9-7711-43C1-94CE-BFFD93FCD53D} = {C37CBA58-B1F2-4E64-B23F-7FD9294837B6}
+		{66B357EE-9083-4277-A0DB-DCE8A2D07196} = {C37CBA58-B1F2-4E64-B23F-7FD9294837B6}
+		{34DEBA09-335B-4DA1-9A90-6726EA561AA7} = {66B357EE-9083-4277-A0DB-DCE8A2D07196}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0C811633-11C2-412B-90B2-B7469D4A3C91}
