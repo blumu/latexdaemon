@@ -7,3 +7,4 @@ latexdaemon/latexdaemon.vcxproj.user
 /latexdaemon/builds/LatexDaemon.*.zip
 .github/workflows/msbuild.yml
 symbolCache.db
+.vscode/c_cpp_properties.json

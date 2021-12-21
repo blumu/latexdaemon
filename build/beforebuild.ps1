@@ -13,6 +13,9 @@ if ($releaseVersion) {
 
 $version = $releaseVersion -split '\.'
 
+# append default version decimals
+$version += @(0,0,0)
+
 $content = Get-Content $PSScriptRoot\..\latexdaemon\version.h2
 $content = $content | ForEach-Object {
     $_ `
