@@ -11,17 +11,22 @@ if ($releaseVersion) {
     throw "Script need to run under appveyor or version must be specified as parameter"
 }
 
-$version = $releaseVersion -split '\.'
+if ($releaseVersion -match '^\d+.\d+.\d+$') {
+    $tag = ''
+} else {
+    $tag = $releaseVersion
+    $releaseVersion = "0.0.0"
+}
 
-# append default version decimals
-$version += @(0,0,0)
+$version = $releaseVersion -split '\.'
 
 $content = Get-Content $PSScriptRoot\..\latexdaemon\version.h2
 $content = $content | ForEach-Object {
     $_ `
         -replace '#define MAJOR_VERSION[ \t]*(.*)',"#define MAJOR_VERSION $($version[0])" `
         -replace '#define MINOR_VERSION[ \t]*(.*)',"#define MINOR_VERSION $($version[1])" `
-        -replace '#define BUILD[ \t]*(.*)',"#define BUILD $($version[2])"
+        -replace '#define BUILD[ \t]*(.*)',"#define BUILD $($version[2])" `
+        -replace '#define TAG[ \t]*(.*)', "#define TAG $($tag)"
 }
 Write-Host "Patching version info:"
 $content | Out-Host
