@@ -1,15 +1,12 @@
 #.SYNOPSIS
 #    Patch version file with target version number
-param($releaseVersion, $fallbackVersion = "0.0.666" )
+param($releaseVersion)
 
 if ($releaseVersion) {
-    Write-Information "Using provided version number: $(releaseVersion)"
+    Write-Output "Using provided version number: $releaseVersion"
 } elseif ($Env:APPVEYOR_BUILD_VERSION) {
     $releaseVersion = $Env:APPVEYOR_BUILD_VERSION
-    Write-Information "Using version number set by appveyor: $(releaseVersion)"
-} elseif ($fallbackVersion) {
-    $releaseVersion = fallbackVersion
-    Write-Information "Using default version number: $(releaseVersion)"
+    Write-Output "Using version number set by appveyor: $releaseVersion"
 } else {
     throw "Script need to run under appveyor or version must be specified as parameter"
 }

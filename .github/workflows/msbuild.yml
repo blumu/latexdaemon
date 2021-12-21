@@ -25,14 +25,12 @@ jobs:
 
     - run: echo ${{ steps.get_version.outputs.version }}
 
-    - run: echo ${{ steps.get_version.outputs.version-without-v }}
-
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
     - name: Set version number
       shell: pwsh
-      run: ./build/beforebuild.ps1 -targetVersion ${{ steps.get_version.outputs.version-without-v }} -fallbackVersion 0.0.666
+      run: ./build/beforebuild.ps1 -releaseVersion ${{ steps.get_version.outputs.version-without-v }}
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
