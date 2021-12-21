@@ -32,7 +32,7 @@ jobs:
 
     - name: Set version number
       shell: pwsh
-      run: .\beforebuild.ps1 -targetVersion ${{ steps.get_version.outputs.version-without-v }} -fallbackVersion 0.0.666
+      run: ./build/beforebuild.ps1 -targetVersion ${{ steps.get_version.outputs.version-without-v }} -fallbackVersion 0.0.666
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
