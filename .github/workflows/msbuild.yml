@@ -1,6 +1,12 @@
 name: MSBuild
 
-on: [push]
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+
 
 env:
   # Path to the solution file relative to the root of the project.
@@ -18,7 +24,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v1
+    # - uses: GuillaumeFalourd/setup-windows10-sdk-action@v1
 
     - id: get_version
       uses: battila7/get-version-action@v2
@@ -39,8 +45,57 @@ jobs:
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
 
 
-    - name: Archive code coverage results
+    - name: Publish build artifact
       uses: actions/upload-artifact@v2
       with:
         name: build-output
         path: latexdaemon/Release/*.exe
+
+    - name: Choco pack
+      uses: crazy-max/ghaction-chocolatey@v1
+      with:
+        args: pack choco\latexdaemon.nuspec
+
+    - name: Publish choco artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: choco
+        path: '*.nupkg'
+
+    - name: Create Draft GitHub Release
+      if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ format('LatexDaemon {0}', github.ref)}}
+        draft: true
+        prerelease: false
+
+    - uses: actions/upload-release-asset@v1.0.1
+      if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: latexdaemon/Release/latexdaemon.exe
+        asset_name: latexdaemon.exe
+        asset_content_type: application/octet-stream
+
+
+    - uses: actions/upload-release-asset@v1.0.1
+      if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ format('latexdaemon.{0}.nupkg', steps.get_version.outputs.version-without-v)}}
+        asset_name: ${{ format('latexdaemon.{0}.nupkg', steps.get_version.outputs.version-without-v)}}
+        asset_content_type: application/octet-stream
+
+
+# Push to chocolatey
+# https://docs.chocolatey.org/en-us/create/create-packages#push-your-package
+# choco push packageName.nupkg -s https://push.chocolatey.org/
