@@ -14,7 +14,7 @@ if ($releaseVersion) {
 if ($releaseVersion -match '^\d+.\d+.\d+$') {
     $tag = ''
 } else {
-    $tag = $releaseVersion
+    $tag = "-$releaseVersion"
     $releaseVersion = "0.0.0"
 }
 
