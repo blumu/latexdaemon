@@ -97,7 +97,10 @@ jobs:
         asset_name: ${{ format('latexdaemon.{0}.nupkg', steps.get_version.outputs.version-without-v)}}
         asset_content_type: application/octet-stream
 
-
-# Push to chocolatey
-# https://docs.chocolatey.org/en-us/create/create-packages#push-your-package
-# choco push packageName.nupkg -s https://push.chocolatey.org/
+    # Push to chocolatey
+    # https://docs.chocolatey.org/en-us/create/create-packages#push-your-package
+    - name: Choco push
+      if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      uses: crazy-max/ghaction-chocolatey@v1
+      with:
+        args: push ${{ format('latexdaemon.{0}.nupkg', steps.get_version.outputs.version-without-v)}} -s https://push.chocolatey.org/ --apikey=${{ secrets.CHOCO_KEY }}
